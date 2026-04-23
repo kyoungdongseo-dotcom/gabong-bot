@@ -1,0 +1,33 @@
+# 파이썬
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 가상환경
+venv/
+env/
+.venv/
+
+# 환경변수 (시크릿 포함)
+.env
+.env.local
+.env.*.local
+
+# 로컬 데이터 (배포에선 Volume 사용)
+reminders.json
+
+# 백업 파일
+*.bak
+*.backup
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+logs/

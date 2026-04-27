@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8740092962:AAHnR-u7qcWyhQdIC9tVvCbh41pEBFavu58"
+TOKEN = "8740092962:AAEheWkRrOYDSJLFpvkOQdq3X-gaYAV_Vjc"
 GROUP_ID = -1002363981206
 TOPIC_ID = 2
 ADMIN_IDS = [97057565]

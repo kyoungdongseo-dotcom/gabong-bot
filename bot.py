@@ -78,8 +78,6 @@ async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
     await update.message.reply_text("✅ 업무 현황이 전송되었습니다!")
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(update.message.text)
 
 async def post_init(app):
     asyncio.create_task(check_changes(app))
@@ -88,7 +86,6 @@ app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("notice", notice))
 app.add_handler(CommandHandler("sheet", sheet))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
 print("봇 시작!")
 app.run_polling()

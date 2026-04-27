@@ -11,7 +11,7 @@ ADMIN_IDS = [97057565]
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 
-defget_sheet_data():
+def get_sheet_data():
     creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1

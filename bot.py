@@ -47,7 +47,7 @@ async def check_changes(app):
             save_cache(new_cache)
         except Exception as e:
             print(f"오류: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("안녕하세요! GAbong Bot입니다 🤖")

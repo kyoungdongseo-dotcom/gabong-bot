@@ -8,7 +8,7 @@ GROUP_ID = -1002363981206
 TOPIC_ID = 2
 ADMIN_IDS = [97057565]
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_NAME = "총회 봉사교통부 진행 업무 현황표"
 
 def get_sheet_data():

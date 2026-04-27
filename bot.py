@@ -1,4 +1,7 @@
 import gspread
+import asyncio
+import json
+import os
 from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -10,13 +13,41 @@ ADMIN_IDS = [97057565]
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
+CACHE_FILE = "sheet_cache.json"
 
 def get_sheet_data():
     creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-    rows = sheet.get_all_values()
-    return rows
+    return sheet.get_all_values()
+
+def load_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_cache(data):
+    with open(CACHE_FILE, 'w') as f:
+        json.dump(data, f)
+
+async def check_changes(app):
+    while True:
+        try:
+            rows = get_sheet_data()
+            cache = load_cache()
+            new_cache = {}
+            for i, row in enumerate(rows[4:9]):
+                key = str(i)
+                row_str = str(row)
+                new_cache[key] = row_str
+                if key in cache and cache[key] != row_str and row[0]:
+                    msg = f"📋 업무 현황 변경!\n\n과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}"
+                    await app.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
+            save_cache(new_cache)
+        except Exception as e:
+            print(f"오류: {e}")
+        await asyncio.sleep(300)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("안녕하세요! GAbong Bot입니다 🤖")
@@ -50,7 +81,10 @@ async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(update.message.text)
 
-app = ApplicationBuilder().token(TOKEN).build()
+async def post_init(app):
+    asyncio.create_task(check_changes(app))
+
+app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("notice", notice))
 app.add_handler(CommandHandler("sheet", sheet))

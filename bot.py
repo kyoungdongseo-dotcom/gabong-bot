@@ -9,12 +9,12 @@ TOPIC_ID = 2
 ADMIN_IDS = [97057565]
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-SPREADSHEET_NAME = "총회 봉사교통부 진행 업무 현황표"
+SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 
-def get_sheet_data():
+defget_sheet_data():
     creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
     client = gspread.authorize(creds)
-    sheet = client.open(SPREADSHEET_NAME).sheet1
+    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
     rows = sheet.get_all_values()
     return rows
 

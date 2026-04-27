@@ -42,7 +42,7 @@ async def check_changes(app):
                 row_str = str(row)
                 new_cache[key] = row_str
                 if key in cache and cache[key] != row_str and row[0]:
-                    msg = f"📋 업무 현황 변경!\n\n과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}"
+                    msg = f"📋 업무 현황 변경!\n\n과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}\n금주 진행 일정: {row[8]}\n금주 진행 현황: {row[9]}"
                     await app.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
             save_cache(new_cache)
         except Exception as e:

@@ -15,8 +15,8 @@ ADMIN_IDS = [97057565]
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
-CACHE_FILE = "sheet_cache.json"
-REMINDERS_FILE = "reminders.json"
+CACHE_FILE = "/data/sheet_cache.json"
+REMINDERS_FILE ="/data/reminders.json"
 
 scheduler = AsyncIOScheduler()
 

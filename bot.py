@@ -39,8 +39,12 @@ def save_cache(data):
 def load_reminders():
     os.makedirs("/data", exist_ok=True)
     if os.path.exists(REMINDERS_FILE):
-        with open(REMINDERS_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(REMINDERS_FILE, 'r') as f:
+                data = json.load(f)
+                return [r for r in data if isinstance(r, dict) and "chat_id" in r]
+        except:
+            return []
     return []
 
 def save_reminders(reminders):

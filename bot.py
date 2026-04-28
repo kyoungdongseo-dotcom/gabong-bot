@@ -148,6 +148,8 @@ async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ 매월 {day}일 {time_str}에 알림 등록! (ID: {reminder_id})")
 
 async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     chat_id = update.effective_chat.id
     reminders = [r for r in load_reminders() if r.get("chat_id") == chat_id]
     if not reminders:

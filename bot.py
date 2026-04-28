@@ -37,6 +37,7 @@ def save_cache(data):
         json.dump(data, f)
 
 def load_reminders():
+    os.makedirs("/data", exist_ok=True)
     if os.path.exists(REMINDERS_FILE):
         with open(REMINDERS_FILE, 'r') as f:
             return json.load(f)

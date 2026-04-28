@@ -160,7 +160,7 @@ async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    reminders = [r for r in load_reminders() if r["chat_id"] == chat_id]
+    reminders = [r for r in load_reminders() if r.get("chat_id") == chat_id]
     if not reminders:
         await update.message.reply_text("등록된 리마인더가 없습니다.")
         return

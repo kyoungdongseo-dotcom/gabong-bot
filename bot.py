@@ -87,7 +87,7 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("사용법: /notice [내용]")
         return
-    text = " ".join(context.args)
+    text = update.message.text.split("/notice ", 1)[1]
     msg = f"📢 공지사항\n\n{text}"
     await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
     await update.message.reply_text("✅ 공지가 전송되었습니다!")

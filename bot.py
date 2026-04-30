@@ -2,7 +2,6 @@ import gspread
 import asyncio
 import json
 import os
-import ollama
 from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes

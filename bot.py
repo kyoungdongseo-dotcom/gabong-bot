@@ -2,9 +2,10 @@ import gspread
 import asyncio
 import json
 import os
+import ollama
 from google.oauth2.service_account import Credentials
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 TOKEN = "8740092962:AAEheWkRrOYDSJLFpvkOQdq3X-gaYAV_Vjc"
@@ -15,6 +16,7 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapi
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 CACHE_FILE = "/data/sheet_cache.json"
 REMINDERS_FILE = "/data/reminders.json"
+CHAT_HISTORY = {}
 scheduler = AsyncIOScheduler()
 
 def get_sheet_data():
@@ -51,7 +53,7 @@ def save_reminders(reminders):
         json.dump(reminders, f, ensure_ascii=False)
 
 async def send_reminder(bot, chat_id, text):
-    await bot.send_message(chat_id=chat_id, text=f"⏰ 리마인더\n\n{text}")
+    await bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=f"⏰ 리마인더\n\n{text}")
 
 async def check_changes(app):
     while True:
@@ -71,11 +73,31 @@ async def check_changes(app):
             print(f"오류: {e}")
         await asyncio.sleep(60)
 
+def ask_ai(question, chat_id=None):
+    messages = []
+    if chat_id and chat_id in CHAT_HISTORY:
+        messages = CHAT_HISTORY[chat_id][-10:]
+    messages.append({"role": "user", "content": question})
+    response = ollama.chat(model="llama3.1:8b", messages=messages)
+    answer = response['message']['content']
+    if chat_id:
+        if chat_id not in CHAT_HISTORY:
+            CHAT_HISTORY[chat_id] = []
+        CHAT_HISTORY[chat_id].append({"role": "user", "content": question})
+        CHAT_HISTORY[chat_id].append({"role": "assistant", "content": answer})
+        if len(CHAT_HISTORY[chat_id]) > 20:
+            CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
+    return answer
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    if not update.message:
+        return
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ 공지 권한이 없습니다.")
         return
@@ -87,6 +109,8 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ 공지가 전송되었습니다!")
 
 async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ 권한이 없습니다.")
         return
@@ -98,7 +122,61 @@ async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
     await update.message.reply_text("✅ 업무 현황이 전송되었습니다!")
 
+async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if not context.args:
+        await update.message.reply_text("사용법: /ai [질문]")
+        return
+    question = update.message.text.split("/ai ", 1)[1]
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("🤖 AI가 답변 중입니다...")
+    loop = asyncio.get_event_loop()
+    answer = await loop.run_in_executor(None, ask_ai, question, chat_id)
+    await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
+
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    chat_id = update.effective_chat.id
+    if chat_id not in CHAT_HISTORY or not CHAT_HISTORY[chat_id]:
+        await update.message.reply_text("대화 내역이 없습니다.")
+        return
+    history_text = ""
+    for msg in CHAT_HISTORY[chat_id]:
+        role = "나" if msg["role"] == "user" else "AI"
+        history_text += f"{role}: {msg['content']}\n"
+    question = f"다음 대화를 한국어로 요약해주세요:\n{history_text}"
+    await update.message.reply_text("🤖 요약 중입니다...")
+    loop = asyncio.get_event_loop()
+    answer = await loop.run_in_executor(None, ask_ai, question, None)
+    await update.message.reply_text(f"📝 대화 요약\n\n{answer}")
+
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    chat_id = update.effective_chat.id
+    if chat_id in CHAT_HISTORY:
+        CHAT_HISTORY[chat_id] = []
+    await update.message.reply_text("✅ 대화 내역이 초기화되었습니다!")
+
+async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    bot_username = context.bot.username
+    if f"@{bot_username}" in update.message.text:
+        question = update.message.text.replace(f"@{bot_username}", "").strip()
+        if not question:
+            return
+        chat_id = update.effective_chat.id
+        await update.message.reply_text("🤖 AI가 답변 중입니다...")
+        loop = asyncio.get_event_loop()
+        answer = await loop.run_in_executor(None, ask_ai, question, chat_id)
+        await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
+
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if len(context.args) < 2:
         await update.message.reply_text("사용법: /remind_daily HH:MM [내용]")
         return
@@ -114,6 +192,8 @@ async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ 매일 {time_str}에 알림 등록! (ID: {reminder_id})")
 
 async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if len(context.args) < 3:
         await update.message.reply_text("사용법: /remind_weekly 월,수,금 HH:MM [내용]")
         return
@@ -132,6 +212,8 @@ async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ 매주 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
 
 async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if len(context.args) < 3:
         await update.message.reply_text("사용법: /remind_monthly 일자 HH:MM [내용]")
         return
@@ -166,6 +248,8 @@ async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     if not context.args:
         await update.message.reply_text("사용법: /delete_reminder [ID]")
         return
@@ -199,11 +283,15 @@ app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("notice", notice))
 app.add_handler(CommandHandler("sheet", sheet))
+app.add_handler(CommandHandler("ai", ai_command))
+app.add_handler(CommandHandler("summary", summary))
+app.add_handler(CommandHandler("reset", reset))
 app.add_handler(CommandHandler("remind_daily", remind_daily))
 app.add_handler(CommandHandler("remind_weekly", remind_weekly))
 app.add_handler(CommandHandler("remind_monthly", remind_monthly))
 app.add_handler(CommandHandler("my_reminders", my_reminders))
 app.add_handler(CommandHandler("delete_reminder", delete_reminder))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mention))
 
 print("봇 시작!")
 app.run_polling()

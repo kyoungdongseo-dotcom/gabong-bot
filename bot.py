@@ -8,16 +8,64 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-TOKEN = "8740092962:AAEheWkRrOYDSJLFpvkOQdq3X-gaYAV_Vjc"
+TOKEN = "8528876168:AAFGrNSFEPnBnfuEG1a2Pf4czCts***REVOKED***"
 GROUP_ID = -1002363981206
 TOPIC_ID = 2
 ADMIN_IDS = [97057565]
+MY_USER_ID = 97057565
+MY_USERNAME = "gamdongwon"
+
+TOPIC_IDS = {
+    "홍보": 19116,
+    "교통": 5,
+    "대협": 19118,
+    "사공": 4,
+    "공지": 2,
+    "소통": 3
+}
+
+MENTION_KEYWORDS = {
+    "사공과장": "사공",
+    "사공과장님": "사공",
+    "교통과장": "교통",
+    "교통과장님": "교통",
+    "서무님": "소통",
+    "대협과장님": "대협",
+    "홍보과장": "홍보",
+    "홍보과장님": "홍보",
+    "과장님": "소통",
+    "@msy3315": "대협",
+    "@ahjak33": "소통",
+    "@Siwal21": "홍보",
+    "@yyjunnn": "교통",
+    "지연": "사공",
+    "예산": "교통",
+    "행사": "교통",
+}
+
+MY_KEYWORDS = ["@gamdongwon", "부장님", "부장", "봉교부장님", "봉사교통부장님"]
+
+EXCLUDE_GROUPS = [
+    -1002363981206,
+    -1002244990837,
+    -1002162878310,
+    -1002243480896,
+    -1001972104172,
+    -1001804969266,
+    -1003546102596,
+    -1003575758123,
+    -1002582559428,
+    -1002529584022,
+    -1001525503443,
+]
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 CACHE_FILE = "/data/sheet_cache.json"
 REMINDERS_FILE = "/data/reminders.json"
 CHAT_HISTORY = {}
+GROUP_MESSAGES = {}
+LAST_MENTION = {}
 scheduler = AsyncIOScheduler()
 
 claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
@@ -71,7 +119,7 @@ def load_reminders():
                 return [r for r in data if isinstance(r, dict) and "chat_id" in r]
         except:
             return []
-    return {}
+    return []
 
 def save_reminders(reminders):
     os.makedirs("/data", exist_ok=True)
@@ -102,7 +150,7 @@ async def check_changes(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -168,7 +216,30 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in CHAT_HISTORY:
         CHAT_HISTORY[chat_id] = []
+    if chat_id in GROUP_MESSAGES:
+        GROUP_MESSAGES[chat_id] = []
     await update.message.reply_text("✅ 대화 내역이 초기화되었습니다!")
+
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id != MY_USER_ID:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    if not context.args:
+        await update.message.reply_text("사용법: /reply [내용]")
+        return
+    if MY_USER_ID not in LAST_MENTION:
+        await update.message.reply_text("❌ 멘션된 메시지가 없습니다.")
+        return
+    text = update.message.text.split("/reply ", 1)[1]
+    mention_info = LAST_MENTION[MY_USER_ID]
+    await context.bot.send_message(
+        chat_id=mention_info["chat_id"],
+        text=f"💬 {text}",
+        reply_to_message_id=mention_info["message_id"]
+    )
+    await update.message.reply_text("✅ 답변이 전송되었습니다!")
 
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -258,6 +329,57 @@ async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
     await update.message.reply_text(f"✅ 리마인더 {reminder_id} 삭제 완료!")
 
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    chat_id = update.effective_chat.id
+    user_name = update.effective_user.first_name
+    text = update.message.text
+
+    if chat_id not in GROUP_MESSAGES:
+        GROUP_MESSAGES[chat_id] = []
+    GROUP_MESSAGES[chat_id].append(f"{user_name}: {text}")
+    if len(GROUP_MESSAGES[chat_id]) > 100:
+        GROUP_MESSAGES[chat_id] = GROUP_MESSAGES[chat_id][-100:]
+
+    my_keyword_found = any(kw in text for kw in MY_KEYWORDS)
+    if my_keyword_found and update.effective_user.id != MY_USER_ID:
+        group_name = update.message.chat.title or "그룹"
+        sender = update.effective_user.first_name
+        LAST_MENTION[MY_USER_ID] = {
+            "chat_id": chat_id,
+            "message_id": update.message.message_id
+        }
+        await context.bot.send_message(
+            chat_id=MY_USER_ID,
+            text=f"📣 멘션/호출 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}\n\n답변하려면: /reply [내용]"
+        )
+
+    for keyword, topic_name in MENTION_KEYWORDS.items():
+        if keyword in text and update.effective_user.id != MY_USER_ID and chat_id not in EXCLUDE_GROUPS:
+            group_name = update.message.chat.title or "그룹"
+            sender = update.effective_user.first_name
+            topic_id = TOPIC_IDS[topic_name]
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                message_thread_id=topic_id,
+                text=f"📣 멘션 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}"
+            )
+            break
+
+    bot_username = context.bot.username
+    if f"@{bot_username}" in text:
+        question = text.replace(f"@{bot_username}", "").strip()
+        if not question:
+            return
+        if "요약" in question and GROUP_MESSAGES.get(chat_id):
+            history = "\n".join(GROUP_MESSAGES[chat_id])
+            question = f"다음 대화를 한국어로 요약해주세요:\n{history}"
+        await update.message.reply_text("🤖 AI가 답변 중입니다...")
+        loop = asyncio.get_event_loop()
+        answer = await loop.run_in_executor(None, ask_claude, question, chat_id)
+        await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
+
 async def post_init(app):
     scheduler.start()
     for r in load_reminders():
@@ -282,11 +404,13 @@ app.add_handler(CommandHandler("sheet", sheet))
 app.add_handler(CommandHandler("ai", ai_command))
 app.add_handler(CommandHandler("summary", summary))
 app.add_handler(CommandHandler("reset", reset))
+app.add_handler(CommandHandler("reply", reply_command))
 app.add_handler(CommandHandler("remind_daily", remind_daily))
 app.add_handler(CommandHandler("remind_weekly", remind_weekly))
 app.add_handler(CommandHandler("remind_monthly", remind_monthly))
 app.add_handler(CommandHandler("my_reminders", my_reminders))
 app.add_handler(CommandHandler("delete_reminder", delete_reminder))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
 
 print("봇 시작!")
 app.run_polling()

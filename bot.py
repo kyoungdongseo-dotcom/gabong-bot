@@ -2,6 +2,7 @@ import gspread
 import asyncio
 import json
 import os
+import anthropic
 from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -11,12 +12,38 @@ TOKEN = "8740092962:AAEheWkRrOYDSJLFpvkOQdq3X-gaYAV_Vjc"
 GROUP_ID = -1002363981206
 TOPIC_ID = 2
 ADMIN_IDS = [97057565]
+
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 CACHE_FILE = "/data/sheet_cache.json"
 REMINDERS_FILE = "/data/reminders.json"
 CHAT_HISTORY = {}
 scheduler = AsyncIOScheduler()
+
+claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+SYSTEM_PROMPT = "당신은 총회 봉사교통부의 AI 비서입니다. 반드시 한국어로만 답변하세요. 친절하고 전문적으로 답변하세요. 회의록 작성, 공문 초안, 업무 체크리스트, 아이디어 제안, 대화 요약 등 업무를 도와주세요. 답변은 간결하고 명확하게 해주세요. 확실하지 않은 정보는 모른다고 솔직하게 말하세요."
+
+def ask_claude(question, chat_id=None):
+    messages = []
+    if chat_id and chat_id in CHAT_HISTORY:
+        messages = CHAT_HISTORY[chat_id][-10:]
+    messages.append({"role": "user", "content": question})
+    response = claude_client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1000,
+        system=SYSTEM_PROMPT,
+        messages=messages
+    )
+    answer = response.content[0].text
+    if chat_id:
+        if chat_id not in CHAT_HISTORY:
+            CHAT_HISTORY[chat_id] = []
+        CHAT_HISTORY[chat_id].append({"role": "user", "content": question})
+        CHAT_HISTORY[chat_id].append({"role": "assistant", "content": answer})
+        if len(CHAT_HISTORY[chat_id]) > 20:
+            CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
+    return answer
 
 def get_sheet_data():
     creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
@@ -44,7 +71,7 @@ def load_reminders():
                 return [r for r in data if isinstance(r, dict) and "chat_id" in r]
         except:
             return []
-    return []
+    return {}
 
 def save_reminders(reminders):
     os.makedirs("/data", exist_ok=True)
@@ -71,22 +98,6 @@ async def check_changes(app):
         except Exception as e:
             print(f"오류: {e}")
         await asyncio.sleep(60)
-
-def ask_ai(question, chat_id=None):
-    messages = []
-    if chat_id and chat_id in CHAT_HISTORY:
-        messages = CHAT_HISTORY[chat_id][-10:]
-    messages.append({"role": "user", "content": question})
-    response = ollama.chat(model="llama3.1:8b", messages=messages)
-    answer = response['message']['content']
-    if chat_id:
-        if chat_id not in CHAT_HISTORY:
-            CHAT_HISTORY[chat_id] = []
-        CHAT_HISTORY[chat_id].append({"role": "user", "content": question})
-        CHAT_HISTORY[chat_id].append({"role": "assistant", "content": answer})
-        if len(CHAT_HISTORY[chat_id]) > 20:
-            CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
-    return answer
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -131,7 +142,7 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     await update.message.reply_text("🤖 AI가 답변 중입니다...")
     loop = asyncio.get_event_loop()
-    answer = await loop.run_in_executor(None, ask_ai, question, chat_id)
+    answer = await loop.run_in_executor(None, ask_claude, question, chat_id)
     await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,7 +159,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = f"다음 대화를 한국어로 요약해주세요:\n{history_text}"
     await update.message.reply_text("🤖 요약 중입니다...")
     loop = asyncio.get_event_loop()
-    answer = await loop.run_in_executor(None, ask_ai, question, None)
+    answer = await loop.run_in_executor(None, ask_claude, question, None)
     await update.message.reply_text(f"📝 대화 요약\n\n{answer}")
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -158,20 +169,6 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in CHAT_HISTORY:
         CHAT_HISTORY[chat_id] = []
     await update.message.reply_text("✅ 대화 내역이 초기화되었습니다!")
-
-async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-    bot_username = context.bot.username
-    if f"@{bot_username}" in update.message.text:
-        question = update.message.text.replace(f"@{bot_username}", "").strip()
-        if not question:
-            return
-        chat_id = update.effective_chat.id
-        await update.message.reply_text("🤖 AI가 답변 중입니다...")
-        loop = asyncio.get_event_loop()
-        answer = await loop.run_in_executor(None, ask_ai, question, chat_id)
-        await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
 
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -290,7 +287,6 @@ app.add_handler(CommandHandler("remind_weekly", remind_weekly))
 app.add_handler(CommandHandler("remind_monthly", remind_monthly))
 app.add_handler(CommandHandler("my_reminders", my_reminders))
 app.add_handler(CommandHandler("delete_reminder", delete_reminder))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mention))
 
 print("봇 시작!")
 app.run_polling()

@@ -87,25 +87,29 @@ claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 SYSTEM_PROMPT = "당신은 총회 봉사교통부의 AI 비서입니다. 반드시 한국어로만 답변하세요. 친절하고 전문적으로 답변하세요. 회의록 작성, 공문 초안, 업무 체크리스트, 아이디어 제안, 대화 요약 등 업무를 도와주세요. 답변은 간결하고 명확하게 해주세요. 확실하지 않은 정보는 모른다고 솔직하게 말하세요."
 
 def ask_claude(question, chat_id=None):
-    messages = []
-    if chat_id and chat_id in CHAT_HISTORY:
-        messages = CHAT_HISTORY[chat_id][-10:]
-    messages.append({"role": "user", "content": question})
-    response = claude_client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=1000,
-        system=SYSTEM_PROMPT,
-        messages=messages
-    )
-    answer = response.content[0].text
-    if chat_id:
-        if chat_id not in CHAT_HISTORY:
-            CHAT_HISTORY[chat_id] = []
-        CHAT_HISTORY[chat_id].append({"role": "user", "content": question})
-        CHAT_HISTORY[chat_id].append({"role": "assistant", "content": answer})
-        if len(CHAT_HISTORY[chat_id]) > 20:
-            CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
-    return answer
+    try:
+        messages = []
+        if chat_id and chat_id in CHAT_HISTORY:
+            messages = CHAT_HISTORY[chat_id][-10:]
+        messages.append({"role": "user", "content": question})
+        response = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1000,
+            system=SYSTEM_PROMPT,
+            messages=messages
+        )
+        answer = response.content[0].text
+        if chat_id:
+            if chat_id not in CHAT_HISTORY:
+                CHAT_HISTORY[chat_id] = []
+            CHAT_HISTORY[chat_id].append({"role": "user", "content": question})
+            CHAT_HISTORY[chat_id].append({"role": "assistant", "content": answer})
+            if len(CHAT_HISTORY[chat_id]) > 20:
+                CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
+        return answer
+    except Exception as e:
+        print(f"Claude API 오류: {e}")
+        return "죄송합니다. AI 답변 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 def get_sheet_data():
     creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)

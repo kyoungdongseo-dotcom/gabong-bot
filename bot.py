@@ -204,7 +204,10 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("사용법: /ai [질문]")
         return
-    question = update.message.text.split("/ai ", 1)[1]
+    question = update.message.text.split("/ai ", 1)[1] if "/ai " in update.message.text else ""
+if not question:
+    await update.message.reply_text("사용법: /ai [질문]")
+    return
     chat_id = update.effective_chat.id
     await update.message.reply_text("🤖 AI가 답변 중입니다...")
     loop = asyncio.get_event_loop()

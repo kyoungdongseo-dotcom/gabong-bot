@@ -33,6 +33,10 @@ REACTION_TOPICS = {
     "💯": 4,
 }
 
+REPLY_REACTIONS = {
+    "👌": "네 진행 부탁드립니다."
+}
+
 MENTION_KEYWORDS = {
     "사공과장": "사공",
     "사공과장님": "사공",
@@ -159,7 +163,7 @@ async def check_changes(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -272,6 +276,16 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"전달 성공: {emoji} -> 토픽 {topic_id}")
             except Exception as e:
                 print(f"전달 오류: {e}")
+        if emoji in REPLY_REACTIONS:
+            try:
+                await context.bot.send_message(
+                    chat_id=reaction.chat.id,
+                    text=REPLY_REACTIONS[emoji],
+                    reply_to_message_id=reaction.message_id
+                )
+                print(f"답장 성공: {emoji}")
+            except Exception as e:
+                print(f"답장 오류: {e}")
 
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:

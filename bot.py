@@ -86,6 +86,7 @@ BROADCAST_GROUPS = [
     {"id": -1002875297688, "name": "총회-부야 위아원", "topic_id": 8},
     {"id": -1002521687145, "name": "총회-베드로 위아원", "topic_id": 6},
     {"id": -1002510343383, "name": "총회-마태위아원", "topic_id": 6},
+    {"id": -1002762822230, "name": "12지파교통부장", "topic_id": 2},
 ]
 
 SUMMARY_GROUPS = {
@@ -166,6 +167,17 @@ def save_reminders(reminders):
 async def send_reminder(bot, chat_id, text):
     await bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=f"⏰ 리마인더\n\n{text}")
 
+async def send_broadcast_reminder(bot, text):
+    for group in BROADCAST_GROUPS:
+        try:
+            await bot.send_message(
+                chat_id=group["id"],
+                message_thread_id=group["topic_id"],
+                text=f"⏰ 리마인더\n\n{text}"
+            )
+        except Exception as e:
+            print(f"브로드캐스트 리마인더 오류 {group['name']}: {e}")
+
 async def send_daily_summary(bot):
     for group_id, group_name in SUMMARY_GROUPS.items():
         try:
@@ -207,7 +219,7 @@ async def check_changes(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n/broadcast [내용] - 12개 그룹 일괄 공지\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 총회봉교부 공지\n/broadcast [내용] - 13개 그룹 일괄 공지\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n\n⏰ 리마인더 (총회봉교부)\n/remind_daily HH:MM [내용] - 매일\n/remind_weekly 월,수,금 HH:MM [내용] - 매주\n/remind_biweekly 월 HH:MM [내용] - 2주에 1번\n/remind_monthly 일자 HH:MM [내용] - 매월\n\n⏰ 리마인더 (13개 그룹 전체)\n/broadcast_remind_daily HH:MM [내용] - 매일\n/broadcast_remind_weekly 월,수,금 HH:MM [내용] - 매주\n/broadcast_remind_biweekly 월 HH:MM [내용] - 2주에 1번\n/broadcast_remind_monthly 일자 HH:MM [내용] - 매월\n\n/my_reminders - 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,19 +261,206 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             fail += 1
     await update.message.reply_text(f"✅ 전송 완료!\n성공: {success}개\n실패: {fail}개")
 
-async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("사용법: /remind_daily HH:MM [내용]")
+        return
+    time_str = context.args[0]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    chat_id = update.effective_chat.id
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "daily", "time": time_str, "text": text, "chat_id": chat_id})
+    save_reminders(reminders)
+    scheduler.add_job(send_reminder, 'cron', hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매일 {time_str}에 알림 등록! (ID: {reminder_id})")
+
+async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /remind_weekly 월,수,금 HH:MM [내용]")
+        return
+    days_str = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    chat_id = update.effective_chat.id
+    day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+    days = ",".join([day_map[d] for d in days_str.split(",")])
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "weekly", "days": days_str, "time": time_str, "text": text, "chat_id": chat_id})
+    save_reminders(reminders)
+    scheduler.add_job(send_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매주 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
+
+async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /remind_biweekly 월 HH:MM [내용]")
+        return
+    days_str = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    chat_id = update.effective_chat.id
+    day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+    days = ",".join([day_map[d] for d in days_str.split(",")])
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "biweekly", "days": days_str, "time": time_str, "text": text, "chat_id": chat_id})
+    save_reminders(reminders)
+    scheduler.add_job(send_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, week="*/2", args=[context.bot, chat_id, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 2주마다 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
+
+async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /remind_monthly 일자 HH:MM [내용]")
+        return
+    day = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    chat_id = update.effective_chat.id
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "monthly", "day": day, "time": time_str, "text": text, "chat_id": chat_id})
+    save_reminders(reminders)
+    scheduler.add_job(send_reminder, 'cron', day=day, hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매월 {day}일 {time_str}에 알림 등록! (ID: {reminder_id})")
+
+async def broadcast_remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ 권한이 없습니다.")
         return
-    rows = get_sheet_data()
-    msg = "📋 업무 현황\n\n"
-    for row in rows[4:9]:
-        if row[0]:
-            msg += f"• {row[0]} | {row[1]} | {row[2]}\n"
-    await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
-    await update.message.reply_text("✅ 업무 현황이 전송되었습니다!")
+    if len(context.args) < 2:
+        await update.message.reply_text("사용법: /broadcast_remind_daily HH:MM [내용]")
+        return
+    time_str = context.args[0]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "broadcast_daily", "time": time_str, "text": text, "chat_id": 0})
+    save_reminders(reminders)
+    scheduler.add_job(send_broadcast_reminder, 'cron', hour=hour, minute=minute, args=[context.bot, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매일 {time_str}에 13개 그룹 알림 등록! (ID: {reminder_id})")
+
+async def broadcast_remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /broadcast_remind_weekly 월,수,금 HH:MM [내용]")
+        return
+    days_str = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+    days = ",".join([day_map[d] for d in days_str.split(",")])
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "broadcast_weekly", "days": days_str, "time": time_str, "text": text, "chat_id": 0})
+    save_reminders(reminders)
+    scheduler.add_job(send_broadcast_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, args=[context.bot, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매주 {days_str} {time_str}에 13개 그룹 알림 등록! (ID: {reminder_id})")
+
+async def broadcast_remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /broadcast_remind_biweekly 월 HH:MM [내용]")
+        return
+    days_str = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+    days = ",".join([day_map[d] for d in days_str.split(",")])
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "broadcast_biweekly", "days": days_str, "time": time_str, "text": text, "chat_id": 0})
+    save_reminders(reminders)
+    scheduler.add_job(send_broadcast_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, week="*/2", args=[context.bot, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 2주마다 {days_str} {time_str}에 13개 그룹 알림 등록! (ID: {reminder_id})")
+
+async def broadcast_remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text("사용법: /broadcast_remind_monthly 일자 HH:MM [내용]")
+        return
+    day = context.args[0]
+    time_str = context.args[1]
+    text = update.message.text.split(time_str + " ", 1)[1]
+    hour, minute = map(int, time_str.split(":"))
+    reminders = load_reminders()
+    reminder_id = len(reminders) + 1
+    reminders.append({"id": reminder_id, "type": "broadcast_monthly", "day": day, "time": time_str, "text": text, "chat_id": 0})
+    save_reminders(reminders)
+    scheduler.add_job(send_broadcast_reminder, 'cron', day=day, hour=hour, minute=minute, args=[context.bot, text], id=str(reminder_id))
+    await update.message.reply_text(f"✅ 매월 {day}일 {time_str}에 13개 그룹 알림 등록! (ID: {reminder_id})")
+
+async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    chat_id = update.effective_chat.id
+    reminders = [r for r in load_reminders() if r.get("chat_id") == chat_id or r.get("type", "").startswith("broadcast")]
+    if not reminders:
+        await update.message.reply_text("등록된 리마인더가 없습니다.")
+        return
+    msg = "⏰ 내 리마인더 목록\n\n"
+    for r in reminders:
+        if r["type"] == "daily":
+            msg += f"ID {r['id']}: 매일 {r['time']} - {r['text']}\n"
+        elif r["type"] == "weekly":
+            msg += f"ID {r['id']}: 매주 {r['days']} {r['time']} - {r['text']}\n"
+        elif r["type"] == "biweekly":
+            msg += f"ID {r['id']}: 2주마다 {r['days']} {r['time']} - {r['text']}\n"
+        elif r["type"] == "monthly":
+            msg += f"ID {r['id']}: 매월 {r['day']}일 {r['time']} - {r['text']}\n"
+        elif r["type"] == "broadcast_daily":
+            msg += f"ID {r['id']}: [전체] 매일 {r['time']} - {r['text']}\n"
+        elif r["type"] == "broadcast_weekly":
+            msg += f"ID {r['id']}: [전체] 매주 {r['days']} {r['time']} - {r['text']}\n"
+        elif r["type"] == "broadcast_biweekly":
+            msg += f"ID {r['id']}: [전체] 2주마다 {r['days']} {r['time']} - {r['text']}\n"
+        elif r["type"] == "broadcast_monthly":
+            msg += f"ID {r['id']}: [전체] 매월 {r['day']}일 {r['time']} - {r['text']}\n"
+    await update.message.reply_text(msg)
+
+async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if not context.args:
+        await update.message.reply_text("사용법: /delete_reminder [ID]")
+        return
+    reminder_id = context.args[0]
+    reminders = [r for r in load_reminders() if str(r["id"]) != reminder_id]
+    save_reminders(reminders)
+    try:
+        scheduler.remove_job(reminder_id)
+    except:
+        pass
+    await update.message.reply_text(f"✅ 리마인더 {reminder_id} 삭제 완료!")
 
 async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -361,94 +560,6 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"답장 오류: {e}")
 
-async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    if len(context.args) < 2:
-        await update.message.reply_text("사용법: /remind_daily HH:MM [내용]")
-        return
-    time_str = context.args[0]
-    text = update.message.text.split(time_str + " ", 1)[1]
-    chat_id = update.effective_chat.id
-    hour, minute = map(int, time_str.split(":"))
-    reminders = load_reminders()
-    reminder_id = len(reminders) + 1
-    reminders.append({"id": reminder_id, "type": "daily", "time": time_str, "text": text, "chat_id": chat_id})
-    save_reminders(reminders)
-    scheduler.add_job(send_reminder, 'cron', hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
-    await update.message.reply_text(f"✅ 매일 {time_str}에 알림 등록! (ID: {reminder_id})")
-
-async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    if len(context.args) < 3:
-        await update.message.reply_text("사용법: /remind_weekly 월,수,금 HH:MM [내용]")
-        return
-    days_str = context.args[0]
-    time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
-    chat_id = update.effective_chat.id
-    day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
-    days = ",".join([day_map[d] for d in days_str.split(",")])
-    hour, minute = map(int, time_str.split(":"))
-    reminders = load_reminders()
-    reminder_id = len(reminders) + 1
-    reminders.append({"id": reminder_id, "type": "weekly", "days": days_str, "time": time_str, "text": text, "chat_id": chat_id})
-    save_reminders(reminders)
-    scheduler.add_job(send_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
-    await update.message.reply_text(f"✅ 매주 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
-
-async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    if len(context.args) < 3:
-        await update.message.reply_text("사용법: /remind_monthly 일자 HH:MM [내용]")
-        return
-    day = context.args[0]
-    time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
-    chat_id = update.effective_chat.id
-    hour, minute = map(int, time_str.split(":"))
-    reminders = load_reminders()
-    reminder_id = len(reminders) + 1
-    reminders.append({"id": reminder_id, "type": "monthly", "day": day, "time": time_str, "text": text, "chat_id": chat_id})
-    save_reminders(reminders)
-    scheduler.add_job(send_reminder, 'cron', day=day, hour=hour, minute=minute, args=[context.bot, chat_id, text], id=str(reminder_id))
-    await update.message.reply_text(f"✅ 매월 {day}일 {time_str}에 알림 등록! (ID: {reminder_id})")
-
-async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    chat_id = update.effective_chat.id
-    reminders = [r for r in load_reminders() if r.get("chat_id") == chat_id]
-    if not reminders:
-        await update.message.reply_text("등록된 리마인더가 없습니다.")
-        return
-    msg = "⏰ 내 리마인더 목록\n\n"
-    for r in reminders:
-        if r["type"] == "daily":
-            msg += f"ID {r['id']}: 매일 {r['time']} - {r['text']}\n"
-        elif r["type"] == "weekly":
-            msg += f"ID {r['id']}: 매주 {r['days']} {r['time']} - {r['text']}\n"
-        elif r["type"] == "monthly":
-            msg += f"ID {r['id']}: 매월 {r['day']}일 {r['time']} - {r['text']}\n"
-    await update.message.reply_text(msg)
-
-async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    if not context.args:
-        await update.message.reply_text("사용법: /delete_reminder [ID]")
-        return
-    reminder_id = context.args[0]
-    reminders = [r for r in load_reminders() if str(r["id"]) != reminder_id]
-    save_reminders(reminders)
-    try:
-        scheduler.remove_job(reminder_id)
-    except:
-        pass
-    await update.message.reply_text(f"✅ 리마인더 {reminder_id} 삭제 완료!")
-
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -501,6 +612,20 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         answer = await loop.run_in_executor(None, ask_claude, question, chat_id)
         await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
 
+async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    rows = get_sheet_data()
+    msg = "📋 업무 현황\n\n"
+    for row in rows[4:9]:
+        if row[0]:
+            msg += f"• {row[0]} | {row[1]} | {row[2]}\n"
+    await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
+    await update.message.reply_text("✅ 업무 현황이 전송되었습니다!")
+
 async def post_init(app):
     scheduler.start()
     for r in load_reminders():
@@ -512,8 +637,24 @@ async def post_init(app):
                 day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
                 days = ",".join([day_map[d] for d in r["days"].split(",")])
                 scheduler.add_job(send_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, args=[app.bot, r["chat_id"], r["text"]], id=str(r["id"]))
+            elif r["type"] == "biweekly":
+                day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+                days = ",".join([day_map[d] for d in r["days"].split(",")])
+                scheduler.add_job(send_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, week="*/2", args=[app.bot, r["chat_id"], r["text"]], id=str(r["id"]))
             elif r["type"] == "monthly":
                 scheduler.add_job(send_reminder, 'cron', day=r["day"], hour=hour, minute=minute, args=[app.bot, r["chat_id"], r["text"]], id=str(r["id"]))
+            elif r["type"] == "broadcast_daily":
+                scheduler.add_job(send_broadcast_reminder, 'cron', hour=hour, minute=minute, args=[app.bot, r["text"]], id=str(r["id"]))
+            elif r["type"] == "broadcast_weekly":
+                day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+                days = ",".join([day_map[d] for d in r["days"].split(",")])
+                scheduler.add_job(send_broadcast_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, args=[app.bot, r["text"]], id=str(r["id"]))
+            elif r["type"] == "broadcast_biweekly":
+                day_map = {"월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun"}
+                days = ",".join([day_map[d] for d in r["days"].split(",")])
+                scheduler.add_job(send_broadcast_reminder, 'cron', day_of_week=days, hour=hour, minute=minute, week="*/2", args=[app.bot, r["text"]], id=str(r["id"]))
+            elif r["type"] == "broadcast_monthly":
+                scheduler.add_job(send_broadcast_reminder, 'cron', day=r["day"], hour=hour, minute=minute, args=[app.bot, r["text"]], id=str(r["id"]))
         except:
             pass
     scheduler.add_job(send_daily_summary, 'cron', hour=20, minute=0, args=[app.bot], id="daily_summary")
@@ -530,7 +671,12 @@ app.add_handler(CommandHandler("reset", reset))
 app.add_handler(CommandHandler("reply", reply_command))
 app.add_handler(CommandHandler("remind_daily", remind_daily))
 app.add_handler(CommandHandler("remind_weekly", remind_weekly))
+app.add_handler(CommandHandler("remind_biweekly", remind_biweekly))
 app.add_handler(CommandHandler("remind_monthly", remind_monthly))
+app.add_handler(CommandHandler("broadcast_remind_daily", broadcast_remind_daily))
+app.add_handler(CommandHandler("broadcast_remind_weekly", broadcast_remind_weekly))
+app.add_handler(CommandHandler("broadcast_remind_biweekly", broadcast_remind_biweekly))
+app.add_handler(CommandHandler("broadcast_remind_monthly", broadcast_remind_monthly))
 app.add_handler(CommandHandler("my_reminders", my_reminders))
 app.add_handler(CommandHandler("delete_reminder", delete_reminder))
 app.add_handler(MessageReactionHandler(handle_reaction))

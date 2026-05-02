@@ -70,6 +70,7 @@ EXCLUDE_GROUPS = [
     -1002582559428,
     -1002529584022,
     -1001525503443,
+    -1002237080198,
 ]
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']

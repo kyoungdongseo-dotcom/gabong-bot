@@ -413,4 +413,4 @@ app.add_handler(CommandHandler("delete_reminder", delete_reminder))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
 
 print("봇 시작!")
-app.run_polling()
+app.run_polling(allowed_updates=["message", "message_reaction"])

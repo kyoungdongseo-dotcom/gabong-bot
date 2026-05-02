@@ -73,6 +73,21 @@ EXCLUDE_GROUPS = [
     -1002237080198,
 ]
 
+BROADCAST_GROUPS = [
+    {"id": -1002892663170, "name": "총회-도마 위아원"},
+    {"id": -1002428955065, "name": "총회-다대오 위아원"},
+    {"id": -1002818420703, "name": "총회-바돌 위아원"},
+    {"id": -1002585429019, "name": "총회-안드레 위아원"},
+    {"id": -1002794725000, "name": "총회-요한 위아원"},
+    {"id": -1002799842466, "name": "총회-시몬 위아원"},
+    {"id": -1002783667426, "name": "총회-맛디아 위아원"},
+    {"id": -1002570051988, "name": "총회-서야 위아원"},
+    {"id": -1002706540911, "name": "총회-빌립 위아원"},
+    {"id": -1002875297688, "name": "총회-부야 위아원"},
+    {"id": -1002521687145, "name": "총회-베드로 위아원"},
+    {"id": -1002510343383, "name": "총회-마태위아원"},
+]
+
 SUMMARY_GROUPS = {
     -1002363981206: "총회 봉사교통부",
 }
@@ -192,7 +207,7 @@ async def check_changes(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n/broadcast [내용] - 12개 그룹 일괄 공지\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -207,6 +222,31 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.split("/notice ", 1)[1]
     await context.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=f"📢 공지사항\n\n{text}")
     await update.message.reply_text("✅ 공지가 전송되었습니다!")
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ 권한이 없습니다.")
+        return
+    if not context.args:
+        await update.message.reply_text("사용법: /broadcast [내용]")
+        return
+    text = update.message.text.split("/broadcast ", 1)[1]
+    await update.message.reply_text("📢 일괄 공지 전송 중...")
+    success = 0
+    fail = 0
+    for group in BROADCAST_GROUPS:
+        try:
+            await context.bot.send_message(
+                chat_id=group["id"],
+                text=f"📢 공지사항\n\n{text}"
+            )
+            success += 1
+        except Exception as e:
+            print(f"전송 실패 {group['name']}: {e}")
+            fail += 1
+    await update.message.reply_text(f"✅ 전송 완료!\n성공: {success}개\n실패: {fail}개")
 
 async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -481,6 +521,7 @@ async def post_init(app):
 app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("notice", notice))
+app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(CommandHandler("sheet", sheet))
 app.add_handler(CommandHandler("ai", ai_command))
 app.add_handler(CommandHandler("summary", summary))

@@ -381,6 +381,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.effective_chat.id
     user_name = update.effective_user.first_name
     text = update.message.text
+    print(f"그룹 ID: {chat_id} | 그룹명: {update.message.chat.title} | 메시지: {text}")
 
     if chat_id not in GROUP_MESSAGES:
         GROUP_MESSAGES[chat_id] = []

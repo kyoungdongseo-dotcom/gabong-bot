@@ -73,6 +73,10 @@ EXCLUDE_GROUPS = [
     -1002237080198,
 ]
 
+SUMMARY_GROUPS = {
+    -1002363981206: "총회 봉사교통부",
+}
+
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPREADSHEET_ID = "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4"
 CACHE_FILE = "/data/sheet_cache.json"
@@ -147,6 +151,26 @@ def save_reminders(reminders):
 async def send_reminder(bot, chat_id, text):
     await bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=f"⏰ 리마인더\n\n{text}")
 
+async def send_daily_summary(bot):
+    for group_id, group_name in SUMMARY_GROUPS.items():
+        try:
+            if group_id in GROUP_MESSAGES and GROUP_MESSAGES[group_id]:
+                history = "\n".join(GROUP_MESSAGES[group_id])
+                question = f"다음은 오늘 '{group_name}' 그룹의 대화 내용입니다. 핵심 내용을 한국어로 요약해주세요:\n{history}"
+                summary = ask_claude(question)
+                await bot.send_message(
+                    chat_id=MY_USER_ID,
+                    text=f"📋 일일 요약 - {group_name}\n\n{summary}"
+                )
+                GROUP_MESSAGES[group_id] = []
+            else:
+                await bot.send_message(
+                    chat_id=MY_USER_ID,
+                    text=f"📋 일일 요약 - {group_name}\n\n오늘 대화 내용이 없습니다."
+                )
+        except Exception as e:
+            print(f"요약 오류: {e}")
+
 async def check_changes(app):
     while True:
         try:
@@ -204,10 +228,11 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("사용법: /ai [질문]")
         return
-    question = update.message.text.split("/ai ", 1)[1] if "/ai " in update.message.text else ""
-if not question:
-    await update.message.reply_text("사용법: /ai [질문]")
-    return
+    args_text = update.message.text.split(" ", 1)
+    if len(args_text) < 2:
+        await update.message.reply_text("사용법: /ai [질문]")
+        return
+    question = args_text[1]
     chat_id = update.effective_chat.id
     await update.message.reply_text("🤖 AI가 답변 중입니다...")
     loop = asyncio.get_event_loop()
@@ -450,6 +475,7 @@ async def post_init(app):
                 scheduler.add_job(send_reminder, 'cron', day=r["day"], hour=hour, minute=minute, args=[app.bot, r["chat_id"], r["text"]], id=str(r["id"]))
         except:
             pass
+    scheduler.add_job(send_daily_summary, 'cron', hour=11, minute=0, args=[app.bot], id="daily_summary")
     asyncio.create_task(check_changes(app))
 
 app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()

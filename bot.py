@@ -475,7 +475,7 @@ async def post_init(app):
                 scheduler.add_job(send_reminder, 'cron', day=r["day"], hour=hour, minute=minute, args=[app.bot, r["chat_id"], r["text"]], id=str(r["id"]))
         except:
             pass
-    scheduler.add_job(send_daily_summary, 'cron', hour=11, minute=0, args=[app.bot], id="daily_summary")
+    scheduler.add_job(send_daily_summary, 'cron', hour=20, minute=0, args=[app.bot], id="daily_summary")
     asyncio.create_task(check_changes(app))
 
 app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()

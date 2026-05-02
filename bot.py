@@ -5,7 +5,7 @@ import os
 import anthropic
 from google.oauth2.service_account import Credentials
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, MessageReactionHandler, filters, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 TOKEN = "8528876168:AAFGrNSFEPnBnfuEG1a2Pf4czCts***REVOKED***"
@@ -22,6 +22,15 @@ TOPIC_IDS = {
     "사공": 4,
     "공지": 2,
     "소통": 3
+}
+
+REACTION_TOPICS = {
+    "⭐": 2,
+    "🔥": 5,
+    "❤": 19116,
+    "👍": 19118,
+    "🙏": 3,
+    "💯": 4,
 }
 
 MENTION_KEYWORDS = {
@@ -150,7 +159,7 @@ async def check_changes(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
+    msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 공지 전송 (관리자)\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공\n이모티콘 반응으로 해당 토픽에 메시지 전달!\n\n⏰ 리마인더\n/remind_daily HH:MM [내용] - 매일 알림\n/remind_weekly 월,수,금 HH:MM [내용] - 매주 알림\n/remind_monthly 일자 HH:MM [내용] - 매월 알림\n\n/my_reminders - 내 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -240,6 +249,29 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_to_message_id=mention_info["message_id"]
     )
     await update.message.reply_text("✅ 답변이 전송되었습니다!")
+
+async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"반응 이벤트 받음!")
+    if not update.message_reaction:
+        return
+    reaction = update.message_reaction
+    if reaction.user.id != MY_USER_ID:
+        return
+    for r in reaction.new_reaction:
+        emoji = r.emoji
+        print(f"이모티콘: {emoji}")
+        if emoji in REACTION_TOPICS:
+            topic_id = REACTION_TOPICS[emoji]
+            try:
+                await context.bot.forward_message(
+                    chat_id=GROUP_ID,
+                    message_thread_id=topic_id,
+                    from_chat_id=reaction.chat.id,
+                    message_id=reaction.message_id
+                )
+                print(f"전달 성공: {emoji} -> 토픽 {topic_id}")
+            except Exception as e:
+                print(f"전달 오류: {e}")
 
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -410,6 +442,7 @@ app.add_handler(CommandHandler("remind_weekly", remind_weekly))
 app.add_handler(CommandHandler("remind_monthly", remind_monthly))
 app.add_handler(CommandHandler("my_reminders", my_reminders))
 app.add_handler(CommandHandler("delete_reminder", delete_reminder))
+app.add_handler(MessageReactionHandler(handle_reaction))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
 
 print("봇 시작!")

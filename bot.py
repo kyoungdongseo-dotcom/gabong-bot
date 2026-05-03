@@ -11,7 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 TOKEN = "8528876168:AAFGrNSFEPnBnfuEG1a2Pf4czCts***REVOKED***"
 GROUP_ID = -1002363981206
 TOPIC_ID = 2
-ADMIN_IDS = [97057565]
+ADMIN_IDS = [97057565, 754270008]
 MY_USER_ID = 97057565
 MY_USERNAME = "gamdongwon"
 

@@ -2,6 +2,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import config
 from utils import ask_claude, get_chat_mode, log_message, CHAT_HISTORY, GROUP_MESSAGES, LAST_MENTION
+AUTHORIZED_USERS = {
+    414481241,      # 홍보과장
+    5242761926,     # 사공과장
+    1104086017,     # 대협과장
+    1062746453,     # 교통과장
+    754270008,      # 서무
+}
 
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -38,7 +45,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     EXCLUDE_GROUPS = config.get('exclude_groups')
     TOPIC_IDS = config.get('topic_ids')
     for keyword, topic_name in MENTION_KEYWORDS.items():
-        if keyword in text and update.effective_user.id != config.get('my_user_id') and chat_id not in EXCLUDE_GROUPS:
+        if keyword in text and update.effective_user.id in AUTHORIZED_USERS and chat_id not in EXCLUDE_GROUPS:
             group_name = update.message.chat.title or "그룹"
             sender = update.effective_user.first_name
             topic_id = TOPIC_IDS[topic_name]

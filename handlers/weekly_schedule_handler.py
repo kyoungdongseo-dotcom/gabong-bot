@@ -8,19 +8,16 @@ from datetime import datetime, timedelta
 async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """매주 월요일 주간 스케줄 발송"""
     try:
-        # Google Sheets API 연동
         creds = Credentials.from_service_account_file(
             'serviceAccountKey.json',
             scopes=config.get('google_scopes')
         )
         service = build('sheets', 'v4', credentials=creds)
         
-        # 현재 주의 월요일 날짜 구하기
         today = datetime.now()
         monday = today - timedelta(days=today.weekday())
         sunday = monday + timedelta(days=6)
         
-        # Google Sheets에서 데이터 읽기 (B47:G49 - 정확한 범위)
         sheet_id = config.get('weekly_schedule_sheet_id')
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id,
@@ -29,7 +26,6 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
         
         values = result.get('values', [])
         
-        # 현재 주의 일정만 추출
         schedule_text = f"📅 **주간 스케줄**\n{monday.strftime('%Y년 %m월 %d일')} ~ {sunday.strftime('%m월 %d일')}\n\n"
         
         days = ['월', '화', '수', '목', '금', '토']
@@ -48,12 +44,10 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
                     schedule_text += f"  • {item}\n"
                 schedule_text += "\n"
         
-        # 메시지 길이 제한
         MAX_MESSAGE_LENGTH = 4000
         if len(schedule_text) > MAX_MESSAGE_LENGTH:
             schedule_text = schedule_text[:MAX_MESSAGE_LENGTH] + "\n\n...(내용 생략)"
         
-        # 메인 그룹의 공지 토픽으로 발송
         await context.bot.send_message(
             chat_id=config.get('group_id'),
             message_thread_id=config.get('topic_id'),
@@ -73,4 +67,4 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """사용자가 /schedule 명령어로 호출할 때 주간 스케줄 발송"""
-    await send_weekly_schedule(update, context)nano handlers/weekly_schedule_handler.py
+    await send_weekly_schedule(update, context)

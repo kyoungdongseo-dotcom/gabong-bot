@@ -21,14 +21,14 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
         sheet_id = config.get('weekly_schedule_sheet_id')
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id,
-            range='B47:H49'
+            range='B47:H48'
         ).execute()
         
         values = result.get('values', [])
         
         schedule_text = f"📅 **주간 스케줄**\n{monday.strftime('%Y년 %m월 %d일')} ~ {sunday.strftime('%m월 %d일')}\n\n"
         
-        days = ['월', '화', '수', '목', '금', '토', '일']
+        days = ['일', '월', '화', '수', '목', '금', '토']
         
         for i, day in enumerate(days):
             day_schedule = []

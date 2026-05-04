@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import asyncio
+import threading
 import anthropic
 import gspread
 from datetime import datetime, timedelta
@@ -9,6 +10,8 @@ from google.oauth2.service_account import Credentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import config
 
+
+DB_LOCK = threading.Lock()
 claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 SYSTEM_PROMPT = config.get('system_prompt')
 SCOPES = config.get('google_scopes')
@@ -25,10 +28,16 @@ def ensure_data_dir():
 
 
 def get_db_connection():
-    ensure_data_dir()
-    conn = sqlite3.connect(DATABASE_FILE, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+    acquired = DB_LOCK.acquire(timeout=10)
+    if not acquired:
+        raise RuntimeError("Database 접근 타임아웃")
+    try:
+        ensure_data_dir()
+        conn = sqlite3.connect(DATABASE_FILE, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+    finally:
+        DB_LOCK.release()
 
 
 def init_database():
@@ -274,3 +283,33 @@ def get_config():
 def get_scheduler():
     """스케줄러 인스턴스 반환"""
     return scheduler
+# ============================================================================
+# 로깅 설정
+# ============================================================================
+import logging
+
+os.makedirs('logs', exist_ok=True)
+
+# 로거 생성
+logger = logging.getLogger('gabong_bot')
+logger.setLevel(logging.DEBUG)
+
+# 콘솔 핸들러
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter(
+    '%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# 파일 핸들러
+file_handler = logging.FileHandler('logs/bot.log', encoding='utf-8')
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)

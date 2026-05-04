@@ -63,3 +63,6 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
             chat_id=config.get('my_user_id'),
             text=f"⚠️ 주간 스케줄 발송 중 오류 발생:\n{str(e)}"
         )
+async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """사용자가 /schedule 명령어로 호출할 때 주간 스케줄 발송"""
+    await send_weekly_schedule(update, context)

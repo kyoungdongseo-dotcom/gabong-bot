@@ -47,6 +47,11 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
                         schedule_text += f"  • {item}\n"
                 schedule_text += "\n"
         
+        # 메시지 길이 제한 (텔레그램 최대 4096자)
+        MAX_MESSAGE_LENGTH = 4000
+        if len(schedule_text) > MAX_MESSAGE_LENGTH:
+            schedule_text = schedule_text[:MAX_MESSAGE_LENGTH] + "\n\n...(내용 생략)"
+        
         # 메인 그룹의 공지 토픽으로 발송
         await context.bot.send_message(
             chat_id=config.get('group_id'),
@@ -63,6 +68,8 @@ async def send_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYP
             chat_id=config.get('my_user_id'),
             text=f"⚠️ 주간 스케줄 발송 중 오류 발생:\n{str(e)}"
         )
+
+
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """사용자가 /schedule 명령어로 호출할 때 주간 스케줄 발송"""
     await send_weekly_schedule(update, context)

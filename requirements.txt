@@ -4,3 +4,4 @@ google-auth
 apscheduler
 anthropic
 flask
+google-api-python-client>=2.80.0

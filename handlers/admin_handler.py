@@ -5,7 +5,6 @@ from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler
 import config
 
 async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """관리자 대시보드 메인 메뉴"""
     if not update.message:
         return
     if update.effective_user.id not in config.get('admin_ids', []):
@@ -28,86 +27,92 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🎛 *GAbong Bot 관리자 대시보드*",
-        parse_mode="Markdown",
+        "🎛 GAbong Bot 관리자 대시보드",
         reply_markup=reply_markup
     )
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """버튼 콜백 처리"""
     query = update.callback_query
     await query.answer()
+    print(f"[ADMIN] 버튼 클릭: {query.data}")
 
-    if query.data == "admin_notice":
-        await query.edit_message_text(
-            "📢 *공지 발송*\n\n발송할 내용을 입력하세요:\n`/broadcast 내용`",
-            parse_mode="Markdown"
-        )
+    try:
+        if query.data == "admin_notice":
+            await query.edit_message_text(
+                "📢 공지 발송\n\n발송할 내용을 입력하세요:\n/broadcast 내용"
+            )
 
-    elif query.data == "admin_schedule":
-        from handlers.weekly_schedule_handler import build_weekly_message
-        message = await build_weekly_message()
-        await query.edit_message_text(message)
+        elif query.data == "admin_schedule":
+            from handlers.weekly_schedule_handler import build_weekly_message
+            message = await build_weekly_message()
+            await query.edit_message_text(message[:4000])
 
-    elif query.data == "admin_reminders":
-        from utils import load_reminders
-        reminders = load_reminders()
-        if not reminders:
-            text = "⏰ *등록된 리마인더 없음*"
-        else:
-            lines = ["⏰ *등록된 리마인더 목록*\n"]
-            for r in reminders:
-                days = r.get('days_display', '')
-                time = r.get('time', '')
-                msg = r.get('message', '')[:30]
-                rtype = r.get('type', '')
-                lines.append(f"• [{rtype}] {days} {time} - {msg}...")
-            text = "\n".join(lines)
-        await query.edit_message_text(text)
+        elif query.data == "admin_reminders":
+            try:
+                from utils import load_reminders
+                reminders = load_reminders()
+            except:
+                reminders = []
+            if not reminders:
+                text = "⏰ 등록된 리마인더 없음"
+            else:
+                lines = ["⏰ 등록된 리마인더 목록\n"]
+                for r in reminders:
+                    days = r.get('days_display', '')
+                    time = r.get('time', '')
+                    msg = r.get('message', '')[:30]
+                    rtype = r.get('type', '')
+                    lines.append(f"• [{rtype}] {days} {time} - {msg}...")
+                text = "\n".join(lines)
+            await query.edit_message_text(text)
 
-    elif query.data == "admin_stats":
-        from handlers.weekly_schedule_handler import read_sheet_values, parse_schedule_from_rows
-        rows = read_sheet_values()
-        day_events = parse_schedule_from_rows(rows)
-        event_count = sum(len(v) for v in day_events.values())
-        busiest = max(day_events.keys(), key=lambda k: len(day_events[k])) if day_events else None
+        elif query.data == "admin_stats":
+            try:
+                from handlers.weekly_schedule_handler import read_sheet_values, parse_schedule_from_rows, KR_DAYS
+                rows = read_sheet_values()
+                day_events = parse_schedule_from_rows(rows)
+                event_count = sum(len(v) for v in day_events.values())
+                busiest = max(day_events.keys(), key=lambda k: len(day_events[k])) if day_events else None
+                lines = ["📊 이번 주 봉사 통계\n"]
+                lines.append(f"• 총 봉사 건수: {event_count}건")
+                if busiest:
+                    lines.append(f"• 가장 바쁜 날: {busiest.strftime('%m/%d')}({KR_DAYS[busiest.weekday()]}) - {len(day_events[busiest])}건")
+                lines.append(f"• 봉사 날짜 수: {len(day_events)}일")
+                text = "\n".join(lines)
+            except Exception as e:
+                text = f"📊 통계 조회 오류: {e}"
+            await query.edit_message_text(text)
 
-        lines = ["📊 *이번 주 봉사 통계*\n"]
-        lines.append(f"• 총 봉사 건수: {event_count}건")
-        if busiest:
-            from handlers.weekly_schedule_handler import KR_DAYS
-            lines.append(f"• 가장 바쁜 날: {busiest.strftime('%m/%d')}({KR_DAYS[busiest.weekday()]}) — {len(day_events[busiest])}건")
-        lines.append(f"• 봉사 날짜 수: {len(day_events)}일")
-        await query.edit_message_text("\n".join(lines))
+        elif query.data == "admin_groups":
+            broadcast_groups = config.get('broadcast_groups', [])
+            if not broadcast_groups:
+                text = "👥 등록된 그룹 없음"
+            else:
+                lines = [f"👥 등록된 그룹 목록 ({len(broadcast_groups)}개)\n"]
+                for g in broadcast_groups:
+                    name = g.get('name', '이름없음')
+                    lines.append(f"• {name}")
+                text = "\n".join(lines)
+            await query.edit_message_text(text)
 
-    elif query.data == "admin_groups":
-        broadcast_groups = config.get('broadcast_groups', [])
-        lines = [f"👥 *등록된 그룹 목록* ({len(broadcast_groups)}개)\n"]
-        for g in broadcast_groups:
-            name = g.get('name', '이름없음')
-            lines.append(f"• {name}")
-        await query.edit_message_text("\n".join(lines))
+        elif query.data == "admin_status":
+            import datetime
+            import pytz
+            KST = pytz.timezone('Asia/Seoul')
+            now = datetime.datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+            try:
+                from utils import load_reminders
+                reminders = load_reminders()
+            except:
+                reminders = []
+            text = f"⚙️ 봇 상태\n\n🟢 Railway 배포: 정상\n🕐 현재 시간: {now}\n⏰ 리마인더: {len(reminders)}개 등록\n👥 관리 그룹: 13개"
+            await query.edit_message_text(text)
 
-    elif query.data == "admin_status":
-        import datetime
-        import pytz
-        KST = pytz.timezone('Asia/Seoul')
-        now = datetime.datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
-        reminders = []
-        try:
-            from utils import load_reminders
-            reminders = load_reminders()
-        except:
-            pass
-
-        text = f"""⚙️ *봇 상태*
-
-🟢 Railway 배포: 정상
-🕐 현재 시간: {now}
-⏰ 리마인더: {len(reminders)}개 등록
-👥 관리 그룹: 13개
-📊 플러그인: 정상 작동"""
-        await query.edit_message_text(text)
+    except Exception as e:
+        print(f"[ADMIN] 콜백 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        await query.edit_message_text(f"오류 발생: {e}")
 
 def register(app, cfg):
     app.add_handler(CommandHandler("admin", admin_dashboard))

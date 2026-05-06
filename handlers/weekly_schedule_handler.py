@@ -1,4 +1,4 @@
-"""주간 봉사일정 및 총회 스케줄 자동 발송"""
+"""주간 봉사일정 및 총회 스케줄"""
 
 import re
 import traceback
@@ -19,12 +19,12 @@ def parse_date(text: str, default_year: int = None) -> datetime | None:
         return None
     text = text.strip()
     year = default_year or datetime.now(KST).year
+    month = datetime.now(KST).month
     patterns = [
         (r'(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})', lambda m: datetime(int(m[0]), int(m[1]), int(m[2]))),
-        (r'(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})', lambda m: datetime(int(m[2]), int(m[0]), int(m[1]))),
         (r'(\d{1,2})[./](\d{1,2})', lambda m: datetime(year, int(m[0]), int(m[1]))),
         (r'(\d{1,2})월\s*(\d{1,2})일', lambda m: datetime(year, int(m[0]), int(m[1]))),
-        (r'^(\d{1,2})$', lambda m: datetime(year, datetime.now(KST).month, int(m[0]))),
+        (r'^(\d{1,2})$', lambda m: datetime(year, month, int(m[0]))),
     ]
     for pattern, converter in patterns:
         match = re.match(pattern, text)
@@ -37,9 +37,8 @@ def parse_date(text: str, default_year: int = None) -> datetime | None:
 
 def this_week_range():
     today = datetime.now(KST).date()
-    # 이전 주 토요일부터 현재 주 일요일까지
-    week_start = today - timedelta(days=today.weekday() + 2)  # 토요일부터
-    week_end = week_start + timedelta(days=8)  # +8일 = 다음주 일요일까지
+    week_start = today - timedelta(days=today.weekday() + 2)
+    week_end = week_start + timedelta(days=8)
     return week_start, week_end
 
 def read_sheet_values():
@@ -49,17 +48,19 @@ def read_sheet_values():
     sheet_name = config.get('weekly_schedule_sheet_name', '')
     data_range = config.get('weekly_schedule_range', 'A1:J500')
     full_range = f"'{sheet_name}'!{data_range}" if sheet_name else data_range
-    result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=full_range, valueRenderOption='FORMATTED_VALUE').execute()
+    result = service.spreadsheets().values().get(
+        spreadsheetId=sheet_id,
+        range=full_range,
+        valueRenderOption='FORMATTED_VALUE'
+    ).execute()
     return result.get('values', [])
 
 def parse_schedule_from_rows(rows):
     week_start, week_end = this_week_range()
     year = datetime.now(KST).year
     day_events = {}
-    
     if len(rows) < 2:
         return day_events
-    
     date_row = rows[0]
     for col_idx, date_str in enumerate(date_row):
         dt = parse_date(str(date_str), year)
@@ -72,29 +73,28 @@ def parse_schedule_from_rows(rows):
                     event = str(rows[row_idx][col_idx]).strip()
                     if event and event != "" and not event.isdigit() and not parse_date(event, year):
                         day_events[date_key].append(event)
-    
     return day_events
 
 async def get_council_schedule() -> str:
-    """총회 스케줄을 읽고 포맷팅 (5월/6월 모두 반영)."""
+    """총회 스케줄 (스크린샷 기준: rows[46]=날짜, rows[47]=내용)"""
     try:
         rows = read_sheet_values()
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
-        current_month = datetime.now(KST).month
-        
         lines = []
-        
-        if current_month == 5:
-            # A1:J500 기준: rows[46]=A47(3~9), rows[47]=A48(내용)
-            date_content_pairs = [(46, 47), (48, 49), (50, 51), (52, 53)]
-            col_range = range(1, 8)  # B~H
-        elif current_month == 6:
-            date_content_pairs = [(1, 2), (3, 4), (5, 6), (7, 8)]
-            col_range = range(0, 7)
-        else:
-            return "이 달 총회 스케줄은 아직 등록되지 않았습니다."
-        
+
+        # 5월 스크린샷 기준:
+        # rows[46] = 행47 = 3,4,5,6,7,8,9
+        # rows[47] = 행48 = 내용
+        # rows[48] = 행49 = 10,11,12,13,14,15,16
+        # rows[49] = 행50 = 내용
+        # rows[50] = 행51 = 17,18,19,20,21,22,23
+        # rows[51] = 행52 = 내용
+        # rows[52] = 행53 = 24,25,26,27,28,29,30
+        # rows[53] = 행54 = 내용
+        date_content_pairs = [(46, 47), (48, 49), (50, 51), (52, 53)]
+        col_range = range(1, 8)  # B~H 열
+
         for date_row_idx, content_row_idx in date_content_pairs:
             if date_row_idx >= len(rows) or content_row_idx >= len(rows):
                 continue
@@ -109,15 +109,13 @@ async def get_council_schedule() -> str:
                     day_name = KR_DAYS[dt.weekday()]
                     lines.append(f"📅 {dt.strftime('%m/%d')} ({day_name})")
                     if col_idx < len(content_row):
-                        event = str(content_row[col_idx]).strip()
-                        if event and event != "":
-                            for item in event.split("\n"):
-                                if item.strip():
-                                    lines.append(f"  • {item.strip()}")
-        
-        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
+                        content = str(content_row[col_idx]).strip()
+                        if content and content != "":
+                            lines.append(f"  • {content}")
+
+        return "\n".join(lines) if lines else "이번 주 총회 일정이 없습니다."
     except Exception as e:
-        print(f"총회 스케줄 조회 오류: {e}")
+        print(f"총회 스케줄 오류: {e}")
         traceback.print_exc()
         return ""
 
@@ -127,13 +125,13 @@ async def build_weekly_message() -> str:
         day_events = parse_schedule_from_rows(rows)
         week_start, week_end = this_week_range()
         date_range_str = f"{week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}"
-        
+
         lines = [f"📅 총회봉사교통부 이번 주 일정 ({date_range_str})", "━━━━━━━━━━━━━━━━━━"]
-        
-        council_schedule = await get_council_schedule()
+
+        council = await get_council_schedule()
         lines.append("📋 총회 스케줄")
-        lines.append(council_schedule)
-        
+        lines.append(council)
+
         lines.append("📋 봉사 일정")
         if day_events:
             for date_key in sorted(day_events.keys()):
@@ -144,16 +142,11 @@ async def build_weekly_message() -> str:
                     lines.append(f"  • {event}")
         else:
             lines.append("이번 주 봉사일정이 없습니다.")
-        
-        event_count = sum(len(events) for events in day_events.values())
-        busiest_day = max(day_events.keys(), key=lambda k: len(day_events[k])) if day_events else None
+
+        event_count = sum(len(v) for v in day_events.values())
         lines.append("📊 한 주 요약")
         lines.append(f"  • 총 봉사 건수: {event_count}건")
-        if busiest_day:
-            busy_count = len(day_events[busiest_day])
-            day_name = KR_DAYS[busiest_day.weekday()]
-            lines.append(f"  • 가장 바쁜 날: {busiest_day.strftime('%m/%d')}({day_name}) — {busy_count}건")
-        
+
         return "\n".join(lines)
     except Exception as e:
         print(f"주간 메시지 생성 오류: {e}")
@@ -179,7 +172,6 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=group_id, message_thread_id=topic_id, text=message)
         await update.message.reply_text("✅ 주간 일정이 발송되었습니다.")
     except Exception as e:
-        print(f"발송 오류: {e}")
         await update.message.reply_text(f"발송 실패: {e}")
 
 def register(app, config):

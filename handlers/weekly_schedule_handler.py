@@ -318,7 +318,7 @@ async def build_weekly_message() -> str:
             bday_name = KR_DAYS[busiest_day.weekday()]
             lines.append(f"  • 가장 바쁜 날: {busiest_day.strftime('%m/%d')}({bday_name}) — {busiest_count}건")
 
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
 
     except Exception as e:
         print(f"❌ 주간 일정 메시지 생성 오류: {e}")

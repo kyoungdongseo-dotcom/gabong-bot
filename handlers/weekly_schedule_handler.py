@@ -200,6 +200,7 @@ def parse_schedule_from_rows(rows):
 async def get_council_schedule() -> str:
     """총회 스케줄을 읽고 포맷팅 (월별 자동 감지)."""
     try:
+        print("📍 [DEBUG] get_council_schedule() 시작")
         creds = Credentials.from_service_account_file(
             'serviceAccountKey.json',
             scopes=config.get('google_scopes')
@@ -230,7 +231,11 @@ async def get_council_schedule() -> str:
         ).execute()
         
         rows = result.get('values', [])
+        print(f"📍 [DEBUG] 가져온 행 수: {len(rows)}")
+        for i, row in enumerate(rows[:10]):
+            print(f"📍 [DEBUG] rows[{i}]: {row}")
         if not rows or len(rows) < 4:
+            print("📍 [DEBUG] rows가 비어있거나 너무 짧음!")
             return "등록된 총회 일정이 없습니다."
         
         week_start, week_end = this_week_range()

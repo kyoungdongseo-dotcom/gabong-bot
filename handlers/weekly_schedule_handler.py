@@ -81,10 +81,25 @@ def parse_schedule_from_rows(rows):
                         day_events[date_key].append(event)
     return day_events
 
+def read_council_sheet_values():
+    """총회 스케줄 시트 별도로 읽기"""
+    creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
+    service = build('sheets', 'v4', credentials=creds)
+    sheet_id = config.get('weekly_schedule_sheet_id')
+    sheet_name = config.get('council_schedule_sheet_name', '2026 총회 업무 일정')
+    data_range = config.get('council_schedule_range', 'B44:H54')
+    full_range = f"'{sheet_name}'!{data_range}"
+    result = service.spreadsheets().values().get(
+        spreadsheetId=sheet_id,
+        range=full_range,
+        valueRenderOption='FORMATTED_VALUE'
+    ).execute()
+    return result.get('values', [])
+
 async def get_council_schedule() -> str:
-    """총회 스케줄 파싱: rows[46]=날짜, rows[47]=내용 (B~H열)"""
+    """총회 스케줄 파싱: 총회 시트에서 직접 읽기"""
     try:
-        rows = read_sheet_values()
+        rows = read_council_sheet_values()
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
         lines = []
@@ -98,7 +113,11 @@ async def get_council_schedule() -> str:
         # rows[51]=행52: 내용
         # rows[52]=행53: B=24, ...
         # rows[53]=행54: 내용
-        date_content_pairs = [(46, 47), (48, 49), (50, 51), (52, 53)]
+        # B44:H54 범위로 읽었으므로:
+        # rows[0]=요일, rows[1]=공란, rows[3]=3~9, rows[4]=내용
+        # rows[5]=10~16, rows[6]=내용, rows[7]=17~23, rows[8]=내용
+        # rows[9]=24~30, rows[10]=내용
+        date_content_pairs = [(3, 4), (5, 6), (7, 8), (9, 10)]
 
         for date_row_idx, content_row_idx in date_content_pairs:
             if date_row_idx >= len(rows) or content_row_idx >= len(rows):
@@ -106,8 +125,8 @@ async def get_council_schedule() -> str:
             date_row = rows[date_row_idx]
             content_row = rows[content_row_idx]
 
-            # B~H 열 = 인덱스 1~7
-            for col_idx in range(1, 8):
+            # B44:H54 범위이므로 인덱스 0~6
+            for col_idx in range(0, 7):
                 if col_idx >= len(date_row):
                     continue
                 date_str = str(date_row[col_idx]).strip()

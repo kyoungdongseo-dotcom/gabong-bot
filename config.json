@@ -188,5 +188,7 @@
       "예산"
     ]
   },
-  "bot_user_id": 8740092962
+  "bot_user_id": 8740092962,
+  "council_schedule_sheet_name": "2026 총회 업무 일정",
+  "council_schedule_range": "B44:H54"
 }

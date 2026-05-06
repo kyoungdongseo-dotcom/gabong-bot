@@ -48,6 +48,7 @@ def parse_date(text: str, default_year: int = None) -> datetime | None:
         (r'(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})', lambda m: datetime(int(m[2]), int(m[0]), int(m[1]))),
         (r'(\d{1,2})[./](\d{1,2})',                  lambda m: datetime(year, int(m[0]), int(m[1]))),
         (r'(\d{1,2})월\s*(\d{1,2})일',               lambda m: datetime(year, int(m[0]), int(m[1]))),
+        (r'^(\d{1,2})$',                             lambda m: datetime(year, 5, int(m[0]))),  # 5월 단순 숫자
     ]
     for pat, builder in patterns:
         m = re.search(pat, text)

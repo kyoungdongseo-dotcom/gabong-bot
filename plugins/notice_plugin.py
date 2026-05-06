@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes, CommandHandler
 import config
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: /start 실행됨!")
     if not update.message:
         return
     msg = "안녕하세요! GAbong Bot입니다 🤖\n\n📢 공지\n/notice [내용] - 총회봉교부 공지\n/broadcast [내용] - 13개 그룹 일괄 공지\n\n📅 주간 일정\n/schedule - 이번 주 봉사 일정\n/weekly_report - 주간 일정 상세 보고\n\n🤖 AI 비서\n/ai [질문] - AI에게 질문\n/summary - 대화 요약\n/reset - 대화 초기화\n/reply [내용] - 마지막 멘션에 답변\n\n⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행\n\n⏰ 리마인더 (총회봉교부)\n/remind_daily HH:MM [내용] - 매일\n/remind_weekly 월,수,금 HH:MM [내용] - 매주\n/remind_biweekly 월 HH:MM [내용] - 2주에 1번\n/remind_monthly 일자 HH:MM [내용] - 매월\n\n⏰ 리마인더 (13개 그룹 전체)\n/broadcast_remind_daily HH:MM [내용] - 매일\n/broadcast_remind_weekly 월,수,금 HH:MM [내용] - 매주\n/broadcast_remind_biweekly 월 HH:MM [내용] - 2주에 1번\n/broadcast_remind_monthly 일자 HH:MM [내용] - 매월\n\n/my_reminders - 리마인더 목록\n/delete_reminder ID - 리마인더 삭제"

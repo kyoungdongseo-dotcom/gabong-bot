@@ -70,4 +70,4 @@ for plugin_name, plugin in loaded_plugins:
         print(f"플러그인에 register 함수가 없습니다: {plugin_name}")
 
 print("봇 시작!")
-app.run_polling(allowed_updates=["message", "message_reaction"])
+app.run_polling(allowed_updates=["message", "message_reaction", "callback_query"])

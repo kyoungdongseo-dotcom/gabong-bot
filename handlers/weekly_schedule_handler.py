@@ -196,6 +196,49 @@ def parse_schedule_from_rows(rows):
 #  메시지 조합
 # ─────────────────────────────────────────────
 
+
+async def get_council_schedule() -> str:
+    """총회 스케줄을 읽고 포맷팅."""
+    try:
+        creds = Credentials.from_service_account_file(
+            'serviceAccountKey.json',
+            scopes=config.get('google_scopes')
+        )
+        service = build('sheets', 'v4', credentials=creds)
+        
+        sheet_id = config.get('weekly_schedule_sheet_id')
+        sheet_name = config.get('weekly_schedule_sheet_name', '')
+        council_range = "B44:H54"  # 총회 스케줄 범위
+        full_range = f"'{sheet_name}'!{council_range}" if sheet_name else council_range
+        
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range=full_range,
+            valueRenderOption='FORMATTED_VALUE'
+        ).execute()
+        
+        rows = result.get('values', [])
+        week_start, week_end = this_week_range()
+        year = datetime.now(KST).year
+        
+        lines = []
+        for row in rows:
+            if not row:
+                continue
+            # 날짜 찾기
+            for j, cell in enumerate(row):
+                dt = parse_date(str(cell), year)
+                if dt and week_start <= dt.date() <= week_end:
+                    # 이 컬럼이 날짜 → 다음 행들에서 같은 컬럼 내용 추출
+                    lines.append(f"{dt.strftime('%m/%d (%A)')}: {cell}")
+                    break
+        
+        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
+    except Exception as e:
+        print(f"총회 스케줄 조회 오류: {e}")
+        return ""
+
+
 async def build_weekly_message() -> str:
     """이번 주 일정 메시지를 생성해 반환."""
     try:
@@ -209,10 +252,18 @@ async def build_weekly_message() -> str:
         )
 
         lines = [
-            f"📅 봉사교통부 이번 주 일정 ({date_range_str})",
+            f"📅 총회봉사교통부 이번 주 일정 ({date_range_str})",
             "━━━━━━━━━━━━━━━━━━",
             "",
+            "📋 총회 스케줄",
         ]
+        
+        council_schedule = await get_council_schedule()
+        if council_schedule:
+            lines.append(council_schedule)
+        lines.append("")
+        lines.append("📋 봉사 일정")
+        lines.append("")
 
         total_count = 0
         busiest_day = None

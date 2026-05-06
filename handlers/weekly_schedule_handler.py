@@ -208,7 +208,7 @@ async def get_council_schedule() -> str:
         
         sheet_id = config.get('weekly_schedule_sheet_id')
         sheet_name = config.get('weekly_schedule_sheet_name', '')
-        council_range = "B44:H54"  # 총회 스케줄 범위
+        council_range = "B44:H54"
         full_range = f"'{sheet_name}'!{council_range}" if sheet_name else council_range
         
         result = service.spreadsheets().values().get(
@@ -221,19 +221,34 @@ async def get_council_schedule() -> str:
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
         
-        lines = []
-        for row in rows:
-            if not row:
-                continue
-            # 날짜 찾기
-            for j, cell in enumerate(row):
+        # 날짜 헤더 행 찾기
+        date_cols = {}
+        for row_idx, row in enumerate(rows):
+            for col_idx, cell in enumerate(row):
                 dt = parse_date(str(cell), year)
                 if dt and week_start <= dt.date() <= week_end:
-                    # 이 컬럼이 날짜 → 다음 행들에서 같은 컬럼 내용 추출
-                    lines.append(f"{dt.strftime('%m/%d (%A)')}: {cell}")
-                    break
+                    date_cols[col_idx] = dt.date()
+            if date_cols:
+                break
         
-        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
+        if not date_cols:
+            return "등록된 총회 일정이 없습니다."
+        
+        # 같은 컬럼에서 일정 추출
+        lines = []
+        for col_idx, date_key in sorted(date_cols.items()):
+            day_name = KR_DAYS[date_key.weekday()]
+            lines.append(f"📅 {date_key.strftime('%m/%d')} ({day_name})")
+            
+            # 이 컬럼의 모든 행에서 일정 찾기
+            for row_idx in range(1, len(rows)):
+                if col_idx < len(rows[row_idx]):
+                    event = rows[row_idx][col_idx].strip()
+                    if event and not event.isdigit():
+                        lines.append(f"  • {event}")
+        
+        return "
+".join(lines) if lines else "등록된 총회 일정이 없습니다."
     except Exception as e:
         print(f"총회 스케줄 조회 오류: {e}")
         return ""

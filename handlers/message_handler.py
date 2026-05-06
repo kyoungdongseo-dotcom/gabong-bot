@@ -13,6 +13,8 @@ AUTHORIZED_USERS = {
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
+    if update.effective_user.id == config.get('bot_user_id'):
+        return
     chat_id = update.effective_chat.id
     user_name = update.effective_user.first_name
     user_id = update.effective_user.id

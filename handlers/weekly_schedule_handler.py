@@ -130,9 +130,7 @@ async def build_weekly_message() -> str:
         
         lines = [f"📅 총회봉사교통부 이번 주 일정 ({date_range_str})", "━━━━━━━━━━━━━━━━━━"]
         
-        council_schedule = await get_council_schedule()
-        lines.append("📋 총회 스케줄")
-        lines.append(council_schedule)
+        # 총회 스케줄은 추후 처리
         
         lines.append("📋 봉사 일정")
         if day_events:

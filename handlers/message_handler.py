@@ -45,7 +45,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     EXCLUDE_GROUPS = config.get('exclude_groups')
     TOPIC_IDS = config.get('topic_ids')
     for keyword, topic_name in MENTION_KEYWORDS.items():
-        if keyword in text and update.effective_user.id in AUTHORIZED_USERS and chat_id not in EXCLUDE_GROUPS:
+        if keyword in text and update.effective_user.id not in AUTHORIZED_USERS and chat_id not in EXCLUDE_GROUPS:
             group_name = update.message.chat.title or "그룹"
             sender = update.effective_user.first_name
             topic_id = TOPIC_IDS[topic_name]

@@ -46,7 +46,7 @@ def read_sheet_values():
     service = build('sheets', 'v4', credentials=creds)
     sheet_id = config.get('weekly_schedule_sheet_id')
     sheet_name = config.get('weekly_schedule_sheet_name', '')
-    data_range = config.get('weekly_schedule_range', 'A1:J500')
+    data_range = config.get('weekly_schedule_range', 'A1:H500')
     full_range = f"'{sheet_name}'!{data_range}" if sheet_name else data_range
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
@@ -56,19 +56,25 @@ def read_sheet_values():
     return result.get('values', [])
 
 def parse_schedule_from_rows(rows):
+    """봉사 일정 파싱: rows[17]=날짜행, rows[18:43]=봉사내용"""
     week_start, week_end = this_week_range()
     year = datetime.now(KST).year
     day_events = {}
-    if len(rows) < 2:
+
+    if len(rows) <= 17:
         return day_events
-    date_row = rows[17] if len(rows) > 17 else rows[0]
+
+    # rows[17] = 행18 = 봉사 날짜 (A열=일요일, B열=월요일...)
+    date_row = rows[17]
+
     for col_idx, date_str in enumerate(date_row):
         dt = parse_date(str(date_str), year)
         if dt and week_start <= dt.date() <= week_end:
             date_key = dt.date()
             if not day_events.get(date_key):
                 day_events[date_key] = []
-            for row_idx in range(1, len(rows)):
+            # rows[18:43] = 행19~43 = 봉사내용만 (총회스케줄 이전까지)
+            for row_idx in range(18, min(43, len(rows))):
                 if col_idx < len(rows[row_idx]):
                     event = str(rows[row_idx][col_idx]).strip()
                     if event and event != "" and not event.isdigit() and not parse_date(event, year):
@@ -76,31 +82,32 @@ def parse_schedule_from_rows(rows):
     return day_events
 
 async def get_council_schedule() -> str:
-    """총회 스케줄 (스크린샷 기준: rows[46]=날짜, rows[47]=내용)"""
+    """총회 스케줄 파싱: rows[46]=날짜, rows[47]=내용 (B~H열)"""
     try:
         rows = read_sheet_values()
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
         lines = []
 
-        # 5월 스크린샷 기준:
-        # rows[46] = 행47 = 3,4,5,6,7,8,9
-        # rows[47] = 행48 = 내용
-        # rows[48] = 행49 = 10,11,12,13,14,15,16
-        # rows[49] = 행50 = 내용
-        # rows[50] = 행51 = 17,18,19,20,21,22,23
-        # rows[51] = 행52 = 내용
-        # rows[52] = 행53 = 24,25,26,27,28,29,30
-        # rows[53] = 행54 = 내용
+        # 스크린샷 기준:
+        # rows[46]=행47: B=3, C=4, D=5, E=6, F=7, G=8, H=9
+        # rows[47]=행48: 내용
+        # rows[48]=행49: B=10, C=11, ...
+        # rows[49]=행50: 내용
+        # rows[50]=행51: B=17, ...
+        # rows[51]=행52: 내용
+        # rows[52]=행53: B=24, ...
+        # rows[53]=행54: 내용
         date_content_pairs = [(46, 47), (48, 49), (50, 51), (52, 53)]
-        col_range = range(1, 8)  # B~H 열
 
         for date_row_idx, content_row_idx in date_content_pairs:
             if date_row_idx >= len(rows) or content_row_idx >= len(rows):
                 continue
             date_row = rows[date_row_idx]
             content_row = rows[content_row_idx]
-            for col_idx in col_range:
+
+            # B~H 열 = 인덱스 1~7
+            for col_idx in range(1, 8):
                 if col_idx >= len(date_row):
                     continue
                 date_str = str(date_row[col_idx]).strip()

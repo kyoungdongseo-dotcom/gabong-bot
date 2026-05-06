@@ -37,8 +37,9 @@ def parse_date(text: str, default_year: int = None) -> datetime | None:
 
 def this_week_range():
     today = datetime.now(KST).date()
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
+    # 이전 주 토요일부터 현재 주 일요일까지
+    week_start = today - timedelta(days=today.weekday() + 2)  # 토요일부터
+    week_end = week_start + timedelta(days=8)  # +8일 = 다음주 일요일까지
     return week_start, week_end
 
 def read_sheet_values():

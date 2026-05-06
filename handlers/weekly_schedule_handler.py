@@ -61,7 +61,7 @@ def parse_schedule_from_rows(rows):
     day_events = {}
     if len(rows) < 2:
         return day_events
-    date_row = rows[0]
+    date_row = rows[17] if len(rows) > 17 else rows[0]
     for col_idx, date_str in enumerate(date_row):
         dt = parse_date(str(date_str), year)
         if dt and week_start <= dt.date() <= week_end:

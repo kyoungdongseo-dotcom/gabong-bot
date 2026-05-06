@@ -85,8 +85,9 @@ async def get_council_schedule() -> str:
         lines = []
         
         if current_month == 5:
-            date_content_pairs = [(3, 4), (5, 6), (7, 8), (9, 10)]
-            col_range = range(1, 8)
+            # A1:J500 기준: rows[46]=A47(3~9), rows[47]=A48(내용)
+            date_content_pairs = [(46, 47), (49, 50), (51, 52), (53, 54)]
+            col_range = range(1, 8)  # B~H
         elif current_month == 6:
             date_content_pairs = [(1, 2), (3, 4), (5, 6), (7, 8)]
             col_range = range(0, 7)

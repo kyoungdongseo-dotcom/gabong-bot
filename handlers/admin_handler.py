@@ -55,15 +55,20 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reminders = []
             if not reminders:
                 text = "⏰ 등록된 리마인더 없음"
-            else:
-                lines = ["⏰ 등록된 리마인더 목록\n"]
-                for r in reminders:
-                    days = r.get('days_display', '')
-                    time = r.get('time', '')
-                    msg = r.get('message', '')[:30]
-                    rtype = r.get('type', '')
-                    lines.append(f"• [{rtype}] {days} {time} - {msg}...")
-                text = "\n".join(lines)
+                if not reminders:
+                    text = "⏰ 등록된 리마인더 없음"
+                else:
+                    items = ["⏰ 등록된 리마인더 목록\n"]
+                    for i, r in enumerate(reminders, 1):
+                        days = r.get("days_display", "")
+                        time = r.get("time", "")
+                        msg = r.get("message", "")[:50]
+                        rid = r.get("id", "")
+                        dest = r.get("destination", "")
+                        items.append(f"{i}. {days} {time} [{rid}]")
+                        items.append(f"   {msg}")
+                        items.append(f"   {dest}")
+                    text = "\n".join(items)
             await query.edit_message_text(text)
 
         elif query.data == "admin_stats":

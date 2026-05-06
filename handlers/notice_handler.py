@@ -35,7 +35,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /broadcast_remind_monthly 일자 HH:MM [내용] - 매월
 
 /my_reminders - 리마인더 목록
-/delete_reminder ID - 리마인더 삭제"""
+/delete_reminder ID - 리마인더 삭제
+
+🎛 관리자 전용
+/admin - 관리자 대시보드"""
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):

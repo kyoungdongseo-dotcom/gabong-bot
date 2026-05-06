@@ -175,10 +175,11 @@
   "weekly_schedule_region_col": 1,
   "weekly_schedule_program_col": 2,
   "reaction_authorized_users": [
+    97057565,
+    754270008,
     414481241,
     5242761926,
     1104086017,
-    1062746453,
-    754270008
+    1062746453
   ]
 }

@@ -22,7 +22,7 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             topic_id = REACTION_TOPICS[emoji]
             try:
                 await context.bot.forward_message(
-                    chat_id=update.message_reaction.chat.id,
+                    chat_id=config.get('group_id'),  # 총회봉교부로 고정
                     message_thread_id=topic_id,
                     from_chat_id=update.message_reaction.chat.id,
                     message_id=update.message_reaction.message_id

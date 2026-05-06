@@ -6,9 +6,13 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"반응 이벤트 받음!")
     if not update.message_reaction:
         return
-    MY_USER_ID = config.get('my_user_id')
-    if update.message_reaction.user.id != MY_USER_ID:
+    
+    # 권한 있는 사용자만 반응 가능
+    AUTHORIZED_USERS = config.get('reaction_authorized_users', [])
+    if update.message_reaction.user.id not in AUTHORIZED_USERS:
+        print(f"권한 없음: {update.message_reaction.user.id}")
         return
+    
     REACTION_TOPICS = config.get('reaction_topics')
     REPLY_REACTIONS = config.get('reply_reactions')
     for r in update.message_reaction.new_reaction:

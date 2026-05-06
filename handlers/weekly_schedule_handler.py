@@ -198,7 +198,7 @@ def parse_schedule_from_rows(rows):
 
 
 async def get_council_schedule() -> str:
-    """총회 스케줄을 읽고 포맷팅."""
+    """총회 스케줄을 읽고 포맷팅 (월별 자동 감지)."""
     try:
         creds = Credentials.from_service_account_file(
             'serviceAccountKey.json',
@@ -208,7 +208,19 @@ async def get_council_schedule() -> str:
         
         sheet_id = config.get('weekly_schedule_sheet_id')
         sheet_name = config.get('weekly_schedule_sheet_name', '')
-        council_range = "B44:H54"
+        
+        # 현재 월 확인
+        current_month = datetime.now(KST).month
+        
+        # 월별 범위 설정
+        if current_month == 5:
+            council_range = "B44:H54"
+        elif current_month == 6:
+            council_range = "R44:X54"
+        else:
+            # 다른 월 추가 가능
+            return "이 달 총회 스케줄은 아직 등록되지 않았습니다."
+        
         full_range = f"'{sheet_name}'!{council_range}" if sheet_name else council_range
         
         result = service.spreadsheets().values().get(
@@ -218,38 +230,53 @@ async def get_council_schedule() -> str:
         ).execute()
         
         rows = result.get('values', [])
+        if not rows or len(rows) < 4:
+            return "등록된 총회 일정이 없습니다."
+        
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
         
-        # 날짜 헤더 행 찾기
-        date_cols = {}
-        for row_idx, row in enumerate(rows):
-            for col_idx, cell in enumerate(row):
-                dt = parse_date(str(cell), year)
-                if dt and week_start <= dt.date() <= week_end:
-                    date_cols[col_idx] = dt.date()
-            if date_cols:
-                break
-        
-        if not date_cols:
-            return "등록된 총회 일정이 없습니다."
-        
-        # 같은 컬럼에서 일정 추출
         lines = []
-        for col_idx, date_key in sorted(date_cols.items()):
-            day_name = KR_DAYS[date_key.weekday()]
-            lines.append(f"📅 {date_key.strftime('%m/%d')} ({day_name})")
-            
-            # 이 컬럼의 모든 행에서 일정 찾기
-            for row_idx in range(1, len(rows)):
-                if col_idx < len(rows[row_idx]):
-                    event = rows[row_idx][col_idx].strip()
-                    if event and not event.isdigit():
-                        lines.append(f"  • {event}")
         
-        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
+        # 월별 날짜 행 위치
+        if current_month == 5:
+            date_rows = [3, 5, 7, 9]  # B47, B49, B51, B53
+            content_rows = [4, 6, 8, 10]
+        elif current_month == 6:
+            date_rows = [1, 3, 5, 7]  # R45, R47, R49, R51
+            content_rows = [2, 4, 6, 8]
+        else:
+            return "이 달 총회 스케줄은 아직 등록되지 않았습니다."
+        
+        for date_row_idx, content_row_idx in zip(date_rows, content_rows):
+            if date_row_idx >= len(rows):
+                break
+            
+            date_row = rows[date_row_idx]
+            content_row = rows[content_row_idx] if content_row_idx < len(rows) else []
+            
+            for col_idx in range(len(date_row)):
+                cell = date_row[col_idx] if col_idx < len(date_row) else ""
+                dt = parse_date(str(cell), year)
+                
+                if dt and week_start <= dt.date() <= week_end:
+                    day_name = KR_DAYS[dt.weekday()]
+                    lines.append(f"📅 {dt.strftime('%m/%d')} ({day_name})")
+                    
+                    if col_idx < len(content_row):
+                        event = str(content_row[col_idx]).strip()
+                        if event and event != "":
+                            for item in event.split("
+"):
+                                if item.strip():
+                                    lines.append(f"  • {item.strip()}")
+                    break
+        
+        return "
+".join(lines) if lines else "등록된 총회 일정이 없습니다."
     except Exception as e:
         print(f"총회 스케줄 조회 오류: {e}")
+        traceback.print_exc()
         return ""
 
 

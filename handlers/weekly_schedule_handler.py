@@ -198,88 +198,43 @@ def parse_schedule_from_rows(rows):
 
 
 async def get_council_schedule() -> str:
-    """총회 스케줄을 읽고 포맷팅 (월별 자동 감지)."""
+    """총회 스케줄을 읽고 포맷팅 (봉사 일정과 동일한 방식)."""
     try:
-        print("📍 [DEBUG] get_council_schedule() 시작")
-        creds = Credentials.from_service_account_file(
-            'serviceAccountKey.json',
-            scopes=config.get('google_scopes')
-        )
-        service = build('sheets', 'v4', credentials=creds)
-        
-        sheet_id = config.get('weekly_schedule_sheet_id')
-        sheet_name = config.get('weekly_schedule_sheet_name', '')
-        
-        # 현재 월 확인
-        current_month = datetime.now(KST).month
-        
-        # 월별 범위 설정
-        if current_month == 5:
-            council_range = "B44:H54"
-        elif current_month == 6:
-            council_range = "R44:X54"
-        else:
-            # 다른 월 추가 가능
-            return "이 달 총회 스케줄은 아직 등록되지 않았습니다."
-        
-        full_range = f"'{sheet_name}'!{council_range}" if sheet_name else council_range
-        
-        result = service.spreadsheets().values().get(
-            spreadsheetId=sheet_id,
-            range=full_range,
-            valueRenderOption='FORMATTED_VALUE'
-        ).execute()
-        
-        rows = result.get('values', [])
-        print(f"📍 [DEBUG] 가져온 행 수: {len(rows)}")
-        for i, row in enumerate(rows[:10]):
-            print(f"📍 [DEBUG] rows[{i}]: {row}")
-        if not rows or len(rows) < 4:
-            print("📍 [DEBUG] rows가 비어있거나 너무 짧음!")
-            return "등록된 총회 일정이 없습니다."
+        # 봉사 일정과 동일한 방식으로 전체 데이터 읽기
+        rows = read_sheet_values()
         
         week_start, week_end = this_week_range()
         year = datetime.now(KST).year
         
         lines = []
         
-        # 월별 날짜 행 위치
-        if current_month == 5:
-            date_rows = [3, 5, 7, 9]  # B47, B49, B51, B53
-            content_rows = [4, 6, 8, 10]
-        elif current_month == 6:
-            date_rows = [1, 3, 5, 7]  # R45, R47, R49, R51
-            content_rows = [2, 4, 6, 8]
-        else:
-            return "이 달 총회 스케줄은 아직 등록되지 않았습니다."
-        
-        for date_row_idx, content_row_idx in zip(date_rows, content_rows):
-            if date_row_idx >= len(rows):
-                break
+        # B44:H54 범위 = 읽어온 rows에서 약 43~53줄
+        # 봉사 일정과 동일하게 파싱
+        for row_idx, row in enumerate(rows):
+            if not row:
+                continue
             
-            date_row = rows[date_row_idx]
-            content_row = rows[content_row_idx] if content_row_idx < len(rows) else []
-            
-            for col_idx in range(len(date_row)):
-                cell = date_row[col_idx] if col_idx < len(date_row) else ""
+            for col_idx, cell in enumerate(row):
                 dt = parse_date(str(cell), year)
-                
                 if dt and week_start <= dt.date() <= week_end:
                     day_name = KR_DAYS[dt.weekday()]
                     lines.append(f"📅 {dt.strftime('%m/%d')} ({day_name})")
                     
-                    if col_idx < len(content_row):
-                        event = str(content_row[col_idx]).strip()
-                        if event and event != "":
-                            for item in event.split("\n"):
-                                if item.strip():
-                                    lines.append(f"  • {item.strip()}")
+                    # 같은 행에서 다음 열들의 내용 추출
+                    for next_col in range(col_idx + 1, min(col_idx + 2, len(row))):
+                        if next_col < len(row):
+                            event = str(row[next_col]).strip()
+                            if event and event != "" and not event.isdigit():
+                                for item in event.split("
+"):
+                                    if item.strip():
+                                        lines.append(f"  • {item.strip()}")
                     break
         
-        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
+        return "
+".join(lines) if lines else "등록된 총회 일정이 없습니다."
     except Exception as e:
         print(f"총회 스케줄 조회 오류: {e}")
-        traceback.print_exc()
         return ""
 
 

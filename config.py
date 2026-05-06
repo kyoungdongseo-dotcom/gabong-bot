@@ -40,23 +40,10 @@ def validate_config():
     """필수 설정 키 검증."""
     required_keys = ['telegram_token', 'group_id', 'admin_ids']
     config = load_config()
-    
-    print("\n🔍 설정 검증 중...")
-    errors = []
-    
-    for key in required_keys:
-        if key not in config or not config[key]:
-            errors.append(f"  ❌ {key}: 누락됨")
-        else:
-            print(f"  ✅ {key}: 설정됨")
-    
-    if errors:
-        print("\n⚠️  필수 설정 오류:")
-        for error in errors:
-            print(error)
-        raise ValueError(f"필수 설정 누락: {[k for k in required_keys if k not in config]}")
-    
-    print("✅ 모든 필수 설정 OK\n")
+    missing = [key for key in required_keys if key not in config]
+    if missing:
+        print(f"필수 설정 키가 누락되었습니다: {missing}")
+        return False
     return True
 
 # 전역 설정 캐시 (성능 최적화)

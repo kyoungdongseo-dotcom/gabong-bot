@@ -170,7 +170,7 @@
   },
   "system_prompt": "당신은 총회 봉사교통부의 AI 비서입니다. 반드시 한국어로만 답변하세요. 친절하고 전문적으로 답변하세요. 회의록 작성, 공문 초안, 업무 체크리스트, 아이디어 제안, 대화 요약 등 업무를 도와주세요. 답변은 간결하고 명확하게 해주세요. 확실하지 않은 정보는 모른다고 솔직하게 말하세요.",
   "weekly_schedule_sheet_name": "봉사달력 5월",
-  "weekly_schedule_range": "A18:G50",
+  "weekly_schedule_range": "A1:H500",
   "weekly_schedule_date_col": 0,
   "weekly_schedule_region_col": 1,
   "weekly_schedule_program_col": 2,

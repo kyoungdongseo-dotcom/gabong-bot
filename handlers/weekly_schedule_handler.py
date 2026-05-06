@@ -266,14 +266,12 @@ async def get_council_schedule() -> str:
                     if col_idx < len(content_row):
                         event = str(content_row[col_idx]).strip()
                         if event and event != "":
-                            for item in event.split("
-"):
+                            for item in event.split("\n"):
                                 if item.strip():
                                     lines.append(f"  • {item.strip()}")
                     break
         
-        return "
-".join(lines) if lines else "등록된 총회 일정이 없습니다."
+        return "\n".join(lines) if lines else "등록된 총회 일정이 없습니다."
     except Exception as e:
         print(f"총회 스케줄 조회 오류: {e}")
         traceback.print_exc()

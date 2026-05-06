@@ -21,6 +21,9 @@ def register(app, config):
 
 
 def post_init(app):
+    # 기존 job 제거 (중복 방지)
+    scheduler.remove_all_jobs()
+    
     for r in load_reminders():
         try:
             hour, minute = map(int, r["time"].split(":"))

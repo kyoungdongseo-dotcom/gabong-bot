@@ -63,7 +63,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 rtype = r.get('type', '')
                 lines.append(f"• [{rtype}] {days} {time} - {msg}...")
             text = "\n".join(lines)
-        await query.edit_message_text(text, parse_mode="Markdown")
+        await query.edit_message_text(text)
 
     elif query.data == "admin_stats":
         from handlers.weekly_schedule_handler import read_sheet_values, parse_schedule_from_rows
@@ -78,7 +78,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from handlers.weekly_schedule_handler import KR_DAYS
             lines.append(f"• 가장 바쁜 날: {busiest.strftime('%m/%d')}({KR_DAYS[busiest.weekday()]}) — {len(day_events[busiest])}건")
         lines.append(f"• 봉사 날짜 수: {len(day_events)}일")
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+        await query.edit_message_text("\n".join(lines))
 
     elif query.data == "admin_groups":
         broadcast_groups = config.get('broadcast_groups', [])
@@ -86,7 +86,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for g in broadcast_groups:
             name = g.get('name', '이름없음')
             lines.append(f"• {name}")
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+        await query.edit_message_text("\n".join(lines))
 
     elif query.data == "admin_status":
         import datetime
@@ -107,7 +107,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⏰ 리마인더: {len(reminders)}개 등록
 👥 관리 그룹: 13개
 📊 플러그인: 정상 작동"""
-        await query.edit_message_text(text, parse_mode="Markdown")
+        await query.edit_message_text(text)
 
 def register(app, cfg):
     app.add_handler(CommandHandler("admin", admin_dashboard))

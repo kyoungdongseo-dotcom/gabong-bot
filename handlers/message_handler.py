@@ -1,7 +1,8 @@
 from telegram import Update
 from telegram.ext import ContextTypes
+import asyncio
 import config
-from utils import ask_claude, get_chat_mode, log_message, CHAT_HISTORY, GROUP_MESSAGES, LAST_MENTION
+from utils import ask_claude, get_chat_mode, log_message, GROUP_MESSAGES, LAST_MENTION
 from handlers.report_parser import parse_report, save_report_to_sheet
 from handlers.report_docx_handler import generate_and_send_docx
 from google.oauth2.service_account import Credentials
@@ -16,12 +17,52 @@ AUTHORIZED_USERS = {
 }
 
 REPORT_GROUP_ID = -1002777848839
-MEDIA_GROUP_CACHE = {}
 DOCX_RECIPIENT_ID = 754270008
+MEDIA_GROUP_CACHE = {}
 
 def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     return build('sheets', 'v4', credentials=creds)
+
+async def process_media_group(context, media_group_id: str):
+    """앨범 사진 수집 완료 후 처리"""
+    await asyncio.sleep(3)
+
+    cache = MEDIA_GROUP_CACHE.get(media_group_id)
+    if not cache or cache.get('processed'):
+        return
+
+    MEDIA_GROUP_CACHE[media_group_id]['processed'] = True
+    caption = cache.get('caption', '')
+    photos = cache.get('photos', [])[:5]
+    message = cache.get('message')
+
+    if not caption or not message:
+        return
+
+    report = parse_report(caption)
+    if not report:
+        return
+
+    for i, url in enumerate(photos, 1):
+        report[f'사진{i}링크'] = url
+
+    try:
+        service = get_sheet_service()
+        spreadsheet_id = config.get('spreadsheet_id')
+        success = save_report_to_sheet(report, service, spreadsheet_id)
+        if success:
+            await context.bot.send_message(
+                chat_id=DOCX_RECIPIENT_ID,
+                text=f"✅ 봉사보고서 자동 저장 완료!\n"
+                     f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                     f"📋 {report.get('활동명')}\n"
+                     f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+                     f"📸 사진 {len(photos)}장 링크 저장 완료"
+            )
+            await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
+    except Exception as e:
+        print(f"❌ 사진 보고서 저장 오류: {e}")
 
 async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.photo:
@@ -36,72 +77,35 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
     caption = update.message.caption or ""
     media_group_id = update.message.media_group_id
 
+    photo = update.message.photo[-1]
+    photo_file = await context.bot.get_file(photo.file_id)
+    photo_url = photo_file.file_path
+
     if media_group_id:
         if media_group_id not in MEDIA_GROUP_CACHE:
             MEDIA_GROUP_CACHE[media_group_id] = {
-                'caption': caption,
+                'caption': '',
                 'photos': [],
-                'message': update.message
+                'message': update.message,
+                'processed': False
             }
+            asyncio.create_task(process_media_group(context, media_group_id))
 
-        photo = update.message.photo[-1]
-        photo_file = await context.bot.get_file(photo.file_id)
-        MEDIA_GROUP_CACHE[media_group_id]['photos'].append(photo_file.file_path)
-
+        MEDIA_GROUP_CACHE[media_group_id]['photos'].append(photo_url)
         if caption:
             MEDIA_GROUP_CACHE[media_group_id]['caption'] = caption
+            MEDIA_GROUP_CACHE[media_group_id]['message'] = update.message
 
-        if len(MEDIA_GROUP_CACHE[media_group_id]['photos']) >= 1:
-            import asyncio
-            await asyncio.sleep(2)
-
-            cache = MEDIA_GROUP_CACHE.get(media_group_id)
-            if not cache or cache.get('processed'):
-                return
-
-            MEDIA_GROUP_CACHE[media_group_id]['processed'] = True
-            caption = cache['caption']
-            photos = cache['photos'][:5]
-
-            report = parse_report(caption)
-            if not report:
-                return
-
-            for i, url in enumerate(photos, 1):
-                report[f'사진{i}링크'] = url
-
-            try:
-                service = get_sheet_service()
-                spreadsheet_id = config.get('spreadsheet_id')
-                success = save_report_to_sheet(report, service, spreadsheet_id)
-                if success:
-                    await context.bot.send_message(
-                        chat_id=DOCX_RECIPIENT_ID,
-                        text=f"✅ 봉사보고서 자동 저장 완료!\n"
-                             f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                             f"📋 {report.get('활동명')}\n"
-                             f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                             f"📸 사진 {len(photos)}장 링크 저장 완료"
-                    )
-                    await generate_and_send_docx(
-                        context.bot, chat_id, report,
-                        cache['message'].message_id
-                    )
-            except Exception as e:
-                print(f"❌ 사진 보고서 저장 오류: {e}")
     else:
         if not caption:
             return
-
         report = parse_report(caption)
         if not report:
             return
 
-        try:
-            photo = update.message.photo[-1]
-            photo_file = await context.bot.get_file(photo.file_id)
-            report['사진1링크'] = photo_file.file_path
+        report['사진1링크'] = photo_url
 
+        try:
             service = get_sheet_service()
             spreadsheet_id = config.get('spreadsheet_id')
             success = save_report_to_sheet(report, service, spreadsheet_id)
@@ -114,10 +118,7 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                          f"👥 총 봉사자: {report.get('총봉사자')}명\n"
                          f"📸 사진 1장 링크 저장 완료"
                 )
-                await generate_and_send_docx(
-                    context.bot, chat_id, report,
-                    update.message.message_id
-                )
+                await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
         except Exception as e:
             print(f"❌ 사진 보고서 저장 오류: {e}")
 
@@ -155,10 +156,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                              f"📋 {report.get('활동명')}\n"
                              f"👥 총 봉사자: {report.get('총봉사자')}명"
                     )
-                    await generate_and_send_docx(
-                        context.bot, chat_id, report,
-                        update.message.message_id
-                    )
+                    await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
             except Exception as e:
                 print(f"❌ 보고서 저장 오류: {e}")
 
@@ -201,7 +199,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
             question = f"다음 대화를 한국어로 요약해주세요:\n{history}"
         mode = get_chat_mode(chat_id)
         await update.message.reply_text("🤖 AI가 답변 중입니다...")
-        import asyncio
         loop = asyncio.get_event_loop()
         answer = await loop.run_in_executor(None, ask_claude, question, chat_id, user_id, user_name, thread_id, mode)
         await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")

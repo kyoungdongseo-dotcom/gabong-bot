@@ -51,21 +51,36 @@ def parse_report(text: str) -> dict | None:
             return match.group(1).strip()
         return ''
 
+    def extract_number(pattern, text):
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            full_text = match.group(1).strip()
+            num_match = re.search(r'(\d+)', full_text)
+            if num_match:
+                return num_match.group(1)
+            if '없음' in full_text or full_text == '':
+                return '0'
+        return '0'
+
     result['활동명'] = extract_field(r'■\s*활동명\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['봉사분류'] = extract_field(r'■\s*봉사분류\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['활동일시'] = extract_field(r'■\s*활동일시\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['활동장소'] = extract_field(r'■\s*활동장소\s*:\s*(.+?)(?=■|\n\n|$)', text)
-    result['수혜자수'] = extract_field(r'■\s*수혜자\s*:\s*(\d+)', text)
 
-    inner = extract_field(r'■\s*내부봉사자\s*:\s*(\d+)', text)
-    outer = extract_field(r'■\s*외부봉사자\s*:\s*(\d+)', text)
-    result['내부봉사자'] = inner
-    result['외부봉사자'] = outer
+    beneficiary_text = extract_field(r'■\s*수혜자\s*:\s*(.+?)(?=■|\n\n|$)', text)
+    if beneficiary_text:
+        num_match = re.search(r'(\d+)', beneficiary_text)
+        result['수혜자수'] = num_match.group(1) if num_match else beneficiary_text
+
+    result['내부봉사자'] = extract_number(r'■\s*내부봉사자\s*:\s*(.+?)(?=■|\n\n|$)', text)
+    result['외부봉사자'] = extract_number(r'■\s*외부봉사자\s*:\s*(.+?)(?=■|\n\n|$)', text)
 
     try:
-        result['총봉사자'] = str(int(inner or 0) + int(outer or 0))
+        inner = int(result['내부봉사자'] or 0)
+        outer = int(result['외부봉사자'] or 0)
+        result['총봉사자'] = str(inner + outer)
     except:
-        result['총봉사자'] = ''
+        result['총봉사자'] = '0'
 
     result['활동내용'] = extract_field(r'1\.\s*활동\s*내용(.+?)(?=2\.|$)', text)
     result['반응특이사항'] = extract_field(r'2\.\s*반응\s*및\s*특이\s*사항(.+?)(?=3\.|$)', text)

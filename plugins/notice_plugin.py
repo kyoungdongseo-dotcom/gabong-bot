@@ -10,10 +10,6 @@ def register(app, config):
     app.add_handler(CommandHandler("schedule", schedule))
     app.add_handler(CommandHandler("weekly_report", weekly_report))
     app.add_handler(MessageHandler(
-        filters.PHOTO & filters.Caption(pattern="(?i)/broadcast"),
+        filters.PHOTO & filters.CAPTION,
         broadcast_photo
-    ))
-    app.add_handler(MessageHandler(
-        filters.PHOTO & filters.Caption(pattern="(?i)/notice"),
-        notice_photo
     ))

@@ -67,12 +67,10 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"발송 실패: {e}")
 
 async def notice_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """사진 + 캡션 /notice 처리"""
     if not update.message or not update.message.photo:
         return
     ADMIN_IDS = config.get('admin_ids')
     if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("관리자만 사용 가능합니다.")
         return
 
     GROUP_ID = config.get('group_id')
@@ -125,34 +123,52 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def broadcast_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """사진 + 캡션 /broadcast 처리"""
+    """사진 + 캡션 /broadcast 또는 /notice 처리"""
     if not update.message or not update.message.photo:
         return
+
     ADMIN_IDS = config.get('admin_ids')
     if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("관리자만 사용 가능합니다.")
         return
 
-    BROADCAST_GROUPS = config.get('broadcast_groups', [])
-
     caption = update.message.caption or ""
-    caption = caption.replace('/broadcast', '').strip()
 
-    success_count = 0
-    fail_count = 0
-    for group in BROADCAST_GROUPS:
+    # /notice 처리
+    if '/notice' in caption:
+        caption = caption.replace('/notice', '').strip()
+        GROUP_ID = config.get('group_id')
+        TOPIC_ID = config.get('topic_id')
         try:
             await context.bot.send_photo(
-                chat_id=group['id'],
-                message_thread_id=group.get('topic_id'),
+                chat_id=GROUP_ID,
+                message_thread_id=TOPIC_ID,
                 photo=update.message.photo[-1].file_id,
                 caption=f"📣 공지\n\n{caption}" if caption else "📣 공지"
             )
-            success_count += 1
+            await update.message.reply_text("✅ 사진 공지가 발송되었습니다.")
         except Exception as e:
-            print(f"❌ {group['name']} 발송 실패: {e}")
-            fail_count += 1
-    await update.message.reply_text(
-        f"✅ {success_count}개 그룹 사진 공지 발송 완료!\n"
-        f"{'❌ ' + str(fail_count) + '개 실패' if fail_count else ''}"
-    )
+            await update.message.reply_text(f"발송 실패: {e}")
+        return
+
+    # /broadcast 처리
+    if '/broadcast' in caption:
+        caption = caption.replace('/broadcast', '').strip()
+        BROADCAST_GROUPS = config.get('broadcast_groups', [])
+        success_count = 0
+        fail_count = 0
+        for group in BROADCAST_GROUPS:
+            try:
+                await context.bot.send_photo(
+                    chat_id=group['id'],
+                    message_thread_id=group.get('topic_id'),
+                    photo=update.message.photo[-1].file_id,
+                    caption=f"📣 공지\n\n{caption}" if caption else "📣 공지"
+                )
+                success_count += 1
+            except Exception as e:
+                print(f"❌ {group['name']} 발송 실패: {e}")
+                fail_count += 1
+        await update.message.reply_text(
+            f"✅ {success_count}개 그룹 사진 공지 발송 완료!\n"
+            f"{'❌ ' + str(fail_count) + '개 실패' if fail_count else ''}"
+        )

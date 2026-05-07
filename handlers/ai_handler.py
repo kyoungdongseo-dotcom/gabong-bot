@@ -1,10 +1,13 @@
 from telegram import Update
+from utils.permissions import check_admin
 from telegram.ext import ContextTypes
 import asyncio
 from utils import ask_claude, get_chat_history, clear_chat_history, get_chat_mode, CHAT_HISTORY, GROUP_MESSAGES
 
 async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if not await check_admin(update, context):
         return
     if not context.args:
         await update.message.reply_text("사용법: /ai [질문]")
@@ -27,6 +30,8 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if not await check_admin(update, context):
+        return
     chat_id = update.effective_chat.id
     history = get_chat_history(chat_id, limit=50)
     if not history:
@@ -45,6 +50,8 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if not await check_admin(update, context):
         return
     chat_id = update.effective_chat.id
     if chat_id in CHAT_HISTORY:

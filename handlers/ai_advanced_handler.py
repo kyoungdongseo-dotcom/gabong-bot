@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import asyncio
 from telegram import Update
+from utils.permissions import check_admin
 from telegram.ext import ContextTypes
 import config
 from utils import (
@@ -48,6 +49,8 @@ def _build_weekly_prompt(messages, group_name=None):
 async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if not await check_admin(update, context):
+        return
     if not context.args:
         available = ", ".join(config.get('role_prompt_modes', {}).keys())
         await update.message.reply_text(f"사용 가능한 모드: {available}\n사용법: /mode [meeting|proposal|checklist]")
@@ -70,6 +73,8 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if not await check_admin(update, context):
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
@@ -101,6 +106,8 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary_detailed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if not await check_admin(update, context):
+        return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name
@@ -130,6 +137,8 @@ async def summary_detailed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def summary_brief(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if not await check_admin(update, context):
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id

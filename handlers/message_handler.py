@@ -17,6 +17,7 @@ AUTHORIZED_USERS = {
 
 REPORT_GROUP_ID = -1002777848839
 MEDIA_GROUP_CACHE = {}
+DOCX_RECIPIENT_ID = 754270008
 
 def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
@@ -74,12 +75,13 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                 spreadsheet_id = config.get('spreadsheet_id')
                 success = save_report_to_sheet(report, service, spreadsheet_id)
                 if success:
-                    await cache['message'].reply_text(
-                        f"✅ 봉사보고서 자동 저장 완료!\n"
-                        f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                        f"📋 {report.get('활동명')}\n"
-                        f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                        f"📸 사진 {len(photos)}장 링크 저장 완료"
+                    await context.bot.send_message(
+                        chat_id=DOCX_RECIPIENT_ID,
+                        text=f"✅ 봉사보고서 자동 저장 완료!\n"
+                             f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                             f"📋 {report.get('활동명')}\n"
+                             f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+                             f"📸 사진 {len(photos)}장 링크 저장 완료"
                     )
                     await generate_and_send_docx(
                         context.bot, chat_id, report,
@@ -104,12 +106,13 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
             spreadsheet_id = config.get('spreadsheet_id')
             success = save_report_to_sheet(report, service, spreadsheet_id)
             if success:
-                await update.message.reply_text(
-                    f"✅ 봉사보고서 자동 저장 완료!\n"
-                    f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                    f"📋 {report.get('활동명')}\n"
-                    f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                    f"📸 사진 1장 링크 저장 완료"
+                await context.bot.send_message(
+                    chat_id=DOCX_RECIPIENT_ID,
+                    text=f"✅ 봉사보고서 자동 저장 완료!\n"
+                         f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                         f"📋 {report.get('활동명')}\n"
+                         f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+                         f"📸 사진 1장 링크 저장 완료"
                 )
                 await generate_and_send_docx(
                     context.bot, chat_id, report,
@@ -145,11 +148,12 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                 spreadsheet_id = config.get('spreadsheet_id')
                 success = save_report_to_sheet(report, service, spreadsheet_id)
                 if success:
-                    await update.message.reply_text(
-                        f"✅ 봉사보고서 자동 저장 완료!\n"
-                        f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                        f"📋 {report.get('활동명')}\n"
-                        f"👥 총 봉사자: {report.get('총봉사자')}명"
+                    await context.bot.send_message(
+                        chat_id=DOCX_RECIPIENT_ID,
+                        text=f"✅ 봉사보고서 자동 저장 완료!\n"
+                             f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                             f"📋 {report.get('활동명')}\n"
+                             f"👥 총 봉사자: {report.get('총봉사자')}명"
                     )
                     await generate_and_send_docx(
                         context.bot, chat_id, report,

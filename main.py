@@ -13,6 +13,7 @@ from telegram.ext import ApplicationBuilder
 import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
 from handlers.weekly_report_analyzer import send_weekly_report
+from handlers.monthly_stats_handler import send_monthly_stats
 
 PLUGIN_DIRECTORY = Path("plugins")
 
@@ -54,6 +55,7 @@ async def post_init(app):
 
     scheduler.add_job(send_daily_summary, 'cron', hour=20, minute=0, args=[app.bot], id="daily_summary")
     scheduler.add_job(send_weekly_report, 'cron', day_of_week='mon', hour=8, minute=0, args=[app.bot], id="weekly_report_analyzer")
+    scheduler.add_job(send_monthly_stats, 'cron', day=1, hour=0, minute=0, args=[app.bot], id="monthly_stats")
     asyncio.create_task(check_changes(app))
 
 

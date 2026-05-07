@@ -1,6 +1,5 @@
 import asyncio
 
-# Railway에서만 실행 (로컬 충돌 방지)
 import os
 if os.path.exists('.env'):
     print('ERROR: 로컬에서 실행 불가')
@@ -13,6 +12,7 @@ from pathlib import Path
 from telegram.ext import ApplicationBuilder
 import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
+from handlers.weekly_report_analyzer import send_weekly_report
 
 PLUGIN_DIRECTORY = Path("plugins")
 
@@ -51,7 +51,9 @@ async def post_init(app):
                     await result
             except Exception as e:
                 print(f"플러그인 post_init 오류: {plugin.__name__} -> {e}")
+
     scheduler.add_job(send_daily_summary, 'cron', hour=20, minute=0, args=[app.bot], id="daily_summary")
+    scheduler.add_job(send_weekly_report, 'cron', day_of_week='mon', hour=8, minute=0, args=[app.bot], id="weekly_report_analyzer")
     asyncio.create_task(check_changes(app))
 
 

@@ -14,6 +14,35 @@ KST = pytz.timezone('Asia/Seoul')
 KR_DAYS = ['월', '화', '수', '목', '금', '토', '일']
 DAY_EMOJIS = {0: '☀️', 1: '☀️', 2: '☀️', 3: '☀️', 4: '☀️', 5: '🌟', 6: '🌞'}
 
+def get_current_service_sheet_name():
+    """현재 달 봉사달력 시트명 자동 감지"""
+    try:
+        creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
+        service = build('sheets', 'v4', credentials=creds)
+        
+        sheet_id = config.get('weekly_schedule_sheet_id')
+        spreadsheet = service.spreadsheets().get(
+            spreadsheetId=sheet_id
+        ).execute()
+        
+        sheets = spreadsheet.get('sheets', [])
+        current_month = datetime.now(KST).month
+        month_kr = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
+        
+        for sheet in sheets:
+            title = sheet['properties']['title']
+            if '봉사달력' in title and month_kr[current_month] in title:
+                print(f"✅ 봉사달력 시트 감지: {title}")
+                return title
+        
+        fallback = f"봉사달력 {month_kr[current_month]}"
+        print(f"⚠️ 정확한 시트 못 찾음, 기본값 사용: {fallback}")
+        return fallback
+    
+    except Exception as e:
+        print(f"❌ 시트명 자동감지 오류: {e}")
+        return config.get('weekly_schedule_sheet_name', '봉사달력 5월')
+
 def parse_date(text: str, default_year: int = None) -> datetime | None:
     if not text or not isinstance(text, str):
         return None
@@ -45,7 +74,9 @@ def read_sheet_values():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     service = build('sheets', 'v4', credentials=creds)
     sheet_id = config.get('weekly_schedule_sheet_id')
-    sheet_name = config.get('weekly_schedule_sheet_name', '')
+    
+    sheet_name = get_current_service_sheet_name()
+    
     data_range = config.get('weekly_schedule_range', 'A1:H500')
     full_range = f"'{sheet_name}'!{data_range}" if sheet_name else data_range
     result = service.spreadsheets().values().get(
@@ -64,7 +95,6 @@ def parse_schedule_from_rows(rows):
     if len(rows) <= 17:
         return day_events
 
-    # rows[17] = 행18 = 봉사 날짜 (A열=일요일, B열=월요일...)
     date_row = rows[17]
 
     for col_idx, date_str in enumerate(date_row):
@@ -73,7 +103,6 @@ def parse_schedule_from_rows(rows):
             date_key = dt.date()
             if not day_events.get(date_key):
                 day_events[date_key] = []
-            # rows[18:43] = 행19~43 = 봉사내용만 (총회스케줄 이전까지)
             for row_idx in range(18, min(43, len(rows))):
                 if col_idx < len(rows[row_idx]):
                     event = str(rows[row_idx][col_idx]).strip()
@@ -86,8 +115,8 @@ def read_council_sheet_values():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     service = build('sheets', 'v4', credentials=creds)
     sheet_id = config.get('weekly_schedule_sheet_id')
-    sheet_name = config.get('council_schedule_sheet_name', '2026 총회 업무 일정')
-    data_range = config.get('council_schedule_range', 'B44:H54')
+    sheet_name = config.get('council_schedule_sheet_name', '2026년 총회 업무일정')
+    data_range = config.get('council_schedule_range', 'B44:M80')
     full_range = f"'{sheet_name}'!{data_range}"
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
@@ -104,19 +133,6 @@ async def get_council_schedule() -> str:
         year = datetime.now(KST).year
         lines = []
 
-        # 스크린샷 기준:
-        # rows[46]=행47: B=3, C=4, D=5, E=6, F=7, G=8, H=9
-        # rows[47]=행48: 내용
-        # rows[48]=행49: B=10, C=11, ...
-        # rows[49]=행50: 내용
-        # rows[50]=행51: B=17, ...
-        # rows[51]=행52: 내용
-        # rows[52]=행53: B=24, ...
-        # rows[53]=행54: 내용
-        # B44:H54 범위로 읽었으므로:
-        # rows[0]=요일, rows[1]=공란, rows[3]=3~9, rows[4]=내용
-        # rows[5]=10~16, rows[6]=내용, rows[7]=17~23, rows[8]=내용
-        # rows[9]=24~30, rows[10]=내용
         date_content_pairs = [(3, 4), (5, 6), (7, 8), (9, 10)]
 
         for date_row_idx, content_row_idx in date_content_pairs:
@@ -125,7 +141,6 @@ async def get_council_schedule() -> str:
             date_row = rows[date_row_idx]
             content_row = rows[content_row_idx]
 
-            # B44:H54 범위이므로 인덱스 0~6
             for col_idx in range(0, 7):
                 if col_idx >= len(date_row):
                     continue

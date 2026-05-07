@@ -151,7 +151,7 @@
     "reply",
     "sheet",
     "weekly_schedule",
-    "admin"
+    "admin", "report"
   ],
   "google_scopes": [
     "https://www.googleapis.com/auth/spreadsheets",

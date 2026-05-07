@@ -9,6 +9,7 @@ if os.path.exists('.env'):
 import pkgutil
 import importlib
 from pathlib import Path
+from telegram import BotCommand
 from telegram.ext import ApplicationBuilder
 import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
@@ -44,6 +45,25 @@ async def post_init(app):
     loop = asyncio.get_running_loop()
     scheduler.configure(event_loop=loop)
     scheduler.start()
+
+    await app.bot.set_my_commands([
+        BotCommand("start", "봇 시작"),
+        BotCommand("notice", "공지 발송"),
+        BotCommand("broadcast", "전체 그룹 공지"),
+        BotCommand("ai", "AI 응답"),
+        BotCommand("summary", "대화 요약"),
+        BotCommand("reset", "대화 초기화"),
+        BotCommand("remind_daily", "매일 리마인더 등록"),
+        BotCommand("remind_weekly", "매주 리마인더 등록"),
+        BotCommand("remind_monthly", "매월 리마인더 등록"),
+        BotCommand("my_reminders", "내 리마인더 목록"),
+        BotCommand("delete_reminder", "리마인더 삭제"),
+        BotCommand("schedule", "주간 봉사 일정"),
+        BotCommand("report", "주간 봉사 분석 리포트"),
+        BotCommand("monthly", "월간 봉사 통계"),
+    ])
+    print("✅ 봇 명령어 등록 완료")
+
     for _, plugin in loaded_plugins:
         if hasattr(plugin, "post_init"):
             try:

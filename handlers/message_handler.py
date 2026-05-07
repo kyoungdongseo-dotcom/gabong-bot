@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes
 import config
 from utils import ask_claude, get_chat_mode, log_message, CHAT_HISTORY, GROUP_MESSAGES, LAST_MENTION
 from handlers.report_parser import parse_report, save_report_to_sheet
+from handlers.report_docx_handler import generate_and_send_docx
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
@@ -22,7 +23,6 @@ def get_sheet_service():
     return build('sheets', 'v4', credentials=creds)
 
 async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """사진 + 캡션 보고서 처리 (최대 5장)"""
     if not update.message or not update.message.photo:
         return
     if update.effective_user.id == config.get('bot_user_id'):
@@ -81,6 +81,10 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                         f"👥 총 봉사자: {report.get('총봉사자')}명\n"
                         f"📸 사진 {len(photos)}장 링크 저장 완료"
                     )
+                    await generate_and_send_docx(
+                        context.bot, chat_id, report,
+                        cache['message'].message_id
+                    )
             except Exception as e:
                 print(f"❌ 사진 보고서 저장 오류: {e}")
     else:
@@ -106,6 +110,10 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                     f"📋 {report.get('활동명')}\n"
                     f"👥 총 봉사자: {report.get('총봉사자')}명\n"
                     f"📸 사진 1장 링크 저장 완료"
+                )
+                await generate_and_send_docx(
+                    context.bot, chat_id, report,
+                    update.message.message_id
                 )
         except Exception as e:
             print(f"❌ 사진 보고서 저장 오류: {e}")
@@ -142,6 +150,10 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"📌 {report.get('지파명')} {report.get('교회명')}\n"
                         f"📋 {report.get('활동명')}\n"
                         f"👥 총 봉사자: {report.get('총봉사자')}명"
+                    )
+                    await generate_and_send_docx(
+                        context.bot, chat_id, report,
+                        update.message.message_id
                     )
             except Exception as e:
                 print(f"❌ 보고서 저장 오류: {e}")

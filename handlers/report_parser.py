@@ -5,10 +5,6 @@ import pytz
 KST = pytz.timezone('Asia/Seoul')
 
 def parse_report(text: str) -> dict | None:
-    """
-    봉사보고서 텍스트 파싱
-    [00지파 00교회 활동명 정기봉사 활동보고] 형식 감지
-    """
     if not text:
         return None
 
@@ -36,7 +32,11 @@ def parse_report(text: str) -> dict | None:
         '홍보도구': '',
         '잘된점': '',
         '개선할점': '',
-        '사진링크': '',
+        '사진1링크': '',
+        '사진2링크': '',
+        '사진3링크': '',
+        '사진4링크': '',
+        '사진5링크': '',
         '원본메시지': text
     }
 
@@ -78,7 +78,6 @@ def parse_report(text: str) -> dict | None:
 
 
 def save_report_to_sheet(report: dict, service, spreadsheet_id: str):
-    """파싱된 보고서를 스프레드시트에 저장"""
     try:
         row = [
             report.get('등록일시', ''),
@@ -98,13 +97,17 @@ def save_report_to_sheet(report: dict, service, spreadsheet_id: str):
             report.get('홍보도구', ''),
             report.get('잘된점', ''),
             report.get('개선할점', ''),
-            report.get('사진링크', ''),
+            report.get('사진1링크', ''),
+            report.get('사진2링크', ''),
+            report.get('사진3링크', ''),
+            report.get('사진4링크', ''),
+            report.get('사진5링크', ''),
             report.get('원본메시지', ''),
         ]
 
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range="봉사리포트!A:S",
+            range="봉사리포트!A:W",
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}

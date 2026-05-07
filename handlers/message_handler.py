@@ -20,6 +20,50 @@ def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     return build('sheets', 'v4', credentials=creds)
 
+async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """사진 + 캡션 보고서 처리"""
+    if not update.message or not update.message.photo:
+        return
+    if update.effective_user.id == config.get('bot_user_id'):
+        return
+
+    chat_id = update.effective_chat.id
+
+    if chat_id != REPORT_GROUP_ID:
+        return
+
+    caption = update.message.caption or ""
+    if not caption:
+        return
+
+    report = parse_report(caption)
+    if not report:
+        return
+
+    try:
+        # 사진 링크 추출 (가장 큰 사이즈)
+        photo = update.message.photo[-1]
+        photo_file = await context.bot.get_file(photo.file_id)
+        photo_url = photo_file.file_path
+
+        # 사진 링크를 보고서에 추가
+        report['사진링크'] = photo_url
+
+        service = get_sheet_service()
+        spreadsheet_id = config.get('spreadsheet_id')
+        success = save_report_to_sheet(report, service, spreadsheet_id)
+
+        if success:
+            await update.message.reply_text(
+                f"✅ 봉사보고서 자동 저장 완료!\n"
+                f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                f"📋 {report.get('활동명')}\n"
+                f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+                f"📸 사진 링크 저장 완료"
+            )
+    except Exception as e:
+        print(f"❌ 사진 보고서 저장 오류: {e}")
+
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return

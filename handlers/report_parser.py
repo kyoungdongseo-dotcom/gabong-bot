@@ -36,42 +36,37 @@ def parse_report(text: str) -> dict | None:
         '홍보도구': '',
         '잘된점': '',
         '개선할점': '',
+        '사진링크': '',
         '원본메시지': text
     }
 
-    # 제목에서 지파명, 교회명 추출
     title_match = re.search(r'\[(.+?지파)\s*(.+?교회)', text)
     if title_match:
         result['지파명'] = title_match.group(1).strip()
         result['교회명'] = title_match.group(2).strip()
 
-    # 필드 파싱 함수
     def extract_field(pattern, text):
         match = re.search(pattern, text, re.DOTALL)
         if match:
             return match.group(1).strip()
         return ''
 
-    # 각 필드 추출
     result['활동명'] = extract_field(r'■\s*활동명\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['봉사분류'] = extract_field(r'■\s*봉사분류\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['활동일시'] = extract_field(r'■\s*활동일시\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['활동장소'] = extract_field(r'■\s*활동장소\s*:\s*(.+?)(?=■|\n\n|$)', text)
     result['수혜자수'] = extract_field(r'■\s*수혜자\s*:\s*(\d+)', text)
 
-    # 봉사자 수 추출
     inner = extract_field(r'■\s*내부봉사자\s*:\s*(\d+)', text)
     outer = extract_field(r'■\s*외부봉사자\s*:\s*(\d+)', text)
     result['내부봉사자'] = inner
     result['외부봉사자'] = outer
 
-    # 총봉사자 계산
     try:
         result['총봉사자'] = str(int(inner or 0) + int(outer or 0))
     except:
         result['총봉사자'] = ''
 
-    # 번호 항목 추출
     result['활동내용'] = extract_field(r'1\.\s*활동\s*내용(.+?)(?=2\.|$)', text)
     result['반응특이사항'] = extract_field(r'2\.\s*반응\s*및\s*특이\s*사항(.+?)(?=3\.|$)', text)
     result['참여인사'] = extract_field(r'3\.\s*참여인사(.+?)(?=4\.|$)', text)
@@ -103,12 +98,13 @@ def save_report_to_sheet(report: dict, service, spreadsheet_id: str):
             report.get('홍보도구', ''),
             report.get('잘된점', ''),
             report.get('개선할점', ''),
+            report.get('사진링크', ''),
             report.get('원본메시지', ''),
         ]
 
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range="봉사리포트!A:R",
+            range="봉사리포트!A:S",
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}

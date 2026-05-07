@@ -6,13 +6,18 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"반응 이벤트 받음!")
     if not update.message_reaction:
         return
-    
-    # 권한 있는 사용자만 반응 가능
+
     AUTHORIZED_USERS = config.get('reaction_authorized_users', [])
     if update.message_reaction.user.id not in AUTHORIZED_USERS:
         print(f"권한 없음: {update.message_reaction.user.id}")
         return
-    
+
+    REACTION_EXCLUDE_GROUPS = config.get('reaction_exclude_groups', [-1002363981206])
+    source_group_id = update.message_reaction.chat.id
+    if source_group_id in REACTION_EXCLUDE_GROUPS:
+        print(f"제외 그룹에서의 반응 무시: {source_group_id}")
+        return
+
     REACTION_TOPICS = config.get('reaction_topics')
     REPLY_REACTIONS = config.get('reply_reactions')
     for r in update.message_reaction.new_reaction:
@@ -22,7 +27,7 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             topic_id = REACTION_TOPICS[emoji]
             try:
                 await context.bot.forward_message(
-                    chat_id=config.get('group_id'),  # 총회봉교부로 고정
+                    chat_id=config.get('group_id'),
                     message_thread_id=topic_id,
                     from_chat_id=update.message_reaction.chat.id,
                     message_id=update.message_reaction.message_id

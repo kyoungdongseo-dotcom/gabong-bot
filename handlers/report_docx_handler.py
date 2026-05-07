@@ -46,14 +46,12 @@ def add_section(doc, title, content):
     content_p.paragraph_format.space_after = Pt(8)
 
 def download_photo(url: str) -> str | None:
-    """텔레그램 사진 URL 다운로드 → 임시 파일 저장"""
     try:
         token = config.get('telegram_token')
         if not url.startswith('http'):
             full_url = f"https://api.telegram.org/file/bot{token}/{url}"
         else:
             full_url = url
-
         response = requests.get(full_url, timeout=10)
         if response.status_code == 200:
             suffix = '.jpg' if 'jpg' in url.lower() else '.png'
@@ -65,6 +63,50 @@ def download_photo(url: str) -> str | None:
     except Exception as e:
         print(f"❌ 사진 다운로드 오류: {e}")
         return None
+
+def add_photos_grid(doc, photo_paths):
+    """사진을 1페이지에 4장씩 2열 배치"""
+    if not photo_paths:
+        return
+
+    p = doc.add_paragraph()
+    run = p.add_run('📸 봉사 사진')
+    run.bold = True
+    run.font.size = Pt(11)
+    run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
+    p.paragraph_format.space_before = Pt(12)
+    p.paragraph_format.space_after = Pt(8)
+
+    # 2열 테이블로 사진 배치 (4장씩)
+    for i in range(0, len(photo_paths), 4):
+        batch = photo_paths[i:i+4]
+
+        photo_table = doc.add_table(rows=2, cols=2)
+        photo_table.style = 'Table Grid'
+
+        for j, path in enumerate(batch):
+            row_idx = j // 2
+            col_idx = j % 2
+            cell = photo_table.rows[row_idx].cells[col_idx]
+            cell.width = Cm(8)
+
+            try:
+                para = cell.paragraphs[0]
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = para.add_run()
+                run.add_picture(path, width=Inches(2.8))
+            except Exception as e:
+                print(f"❌ 사진 삽입 오류: {e}")
+                cell.text = "사진 오류"
+
+        # 4장 미만이면 빈 셀 처리
+        for j in range(len(batch), 4):
+            row_idx = j // 2
+            col_idx = j % 2
+            cell = photo_table.rows[row_idx].cells[col_idx]
+            cell.text = ''
+
+        doc.add_paragraph()
 
 def generate_docx(report: dict, output_path: str) -> bool:
     try:
@@ -114,7 +156,7 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '5. 잘된 점', report.get('잘된점'))
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
 
-        # ✅ 사진 삽입
+        # 사진 다운로드
         photo_urls = []
         for i in range(1, 6):
             url = report.get(f'사진{i}링크', '')
@@ -122,24 +164,14 @@ def generate_docx(report: dict, output_path: str) -> bool:
                 photo_urls.append(url)
 
         if photo_urls:
-            p = doc.add_paragraph()
-            run = p.add_run('📸 봉사 사진')
-            run.bold = True
-            run.font.size = Pt(11)
-            run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
-            p.paragraph_format.space_before = Pt(12)
-            p.paragraph_format.space_after = Pt(8)
-
             tmp_files = []
             for url in photo_urls:
                 tmp_path = download_photo(url)
                 if tmp_path:
-                    try:
-                        doc.add_picture(tmp_path, width=Inches(5))
-                        doc.add_paragraph()
-                        tmp_files.append(tmp_path)
-                    except Exception as e:
-                        print(f"❌ 사진 삽입 오류: {e}")
+                    tmp_files.append(tmp_path)
+
+            if tmp_files:
+                add_photos_grid(doc, tmp_files)
 
             for tmp_path in tmp_files:
                 try:

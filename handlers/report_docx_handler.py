@@ -1,11 +1,14 @@
 import os
+import requests
+import tempfile
 from datetime import datetime
 import pytz
 from docx import Document
-from docx.shared import Pt, RGBColor, Cm
+from docx.shared import Pt, RGBColor, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+import config
 
 KST = pytz.timezone('Asia/Seoul')
 DOCX_RECIPIENT_ID = 754270008
@@ -23,12 +26,10 @@ def add_table_row(table, label, value):
     row = table.add_row()
     label_cell = row.cells[0]
     value_cell = row.cells[1]
-
     label_cell.text = label
     label_cell.paragraphs[0].runs[0].bold = True
     label_cell.paragraphs[0].runs[0].font.size = Pt(10)
     set_cell_background(label_cell, 'D5E8F0')
-
     value_cell.text = value or '-'
     value_cell.paragraphs[0].runs[0].font.size = Pt(10)
 
@@ -40,10 +41,30 @@ def add_section(doc, title, content):
     run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
     p.paragraph_format.space_before = Pt(12)
     p.paragraph_format.space_after = Pt(4)
-
     content_p = doc.add_paragraph(content or '-')
     content_p.runs[0].font.size = Pt(10)
     content_p.paragraph_format.space_after = Pt(8)
+
+def download_photo(url: str) -> str | None:
+    """텔레그램 사진 URL 다운로드 → 임시 파일 저장"""
+    try:
+        token = config.get('telegram_token')
+        if not url.startswith('http'):
+            full_url = f"https://api.telegram.org/file/bot{token}/{url}"
+        else:
+            full_url = url
+
+        response = requests.get(full_url, timeout=10)
+        if response.status_code == 200:
+            suffix = '.jpg' if 'jpg' in url.lower() else '.png'
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            tmp.write(response.content)
+            tmp.close()
+            return tmp.name
+        return None
+    except Exception as e:
+        print(f"❌ 사진 다운로드 오류: {e}")
+        return None
 
 def generate_docx(report: dict, output_path: str) -> bool:
     try:
@@ -80,9 +101,9 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_table_row(table, '■ 활동일시', report.get('활동일시'))
         add_table_row(table, '■ 수혜자', report.get('수혜자수'))
         add_table_row(table, '■ 활동장소', report.get('활동장소'))
-        add_table_row(table, '■ 내부봉사자', f"{report.get('내부봉사자', '-')}명")
-        add_table_row(table, '■ 외부봉사자', f"{report.get('외부봉사자', '-')}명")
-        add_table_row(table, '■ 총봉사자', f"{report.get('총봉사자', '-')}명")
+        add_table_row(table, '■ 내부봉사자', f"{report.get('내부봉사자', '0')}명")
+        add_table_row(table, '■ 외부봉사자', f"{report.get('외부봉사자', '0')}명")
+        add_table_row(table, '■ 총봉사자', f"{report.get('총봉사자', '0')}명")
 
         doc.add_paragraph()
 
@@ -92,6 +113,39 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '4. 홍보도구', report.get('홍보도구'))
         add_section(doc, '5. 잘된 점', report.get('잘된점'))
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
+
+        # ✅ 사진 삽입
+        photo_urls = []
+        for i in range(1, 6):
+            url = report.get(f'사진{i}링크', '')
+            if url:
+                photo_urls.append(url)
+
+        if photo_urls:
+            p = doc.add_paragraph()
+            run = p.add_run('📸 봉사 사진')
+            run.bold = True
+            run.font.size = Pt(11)
+            run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(8)
+
+            tmp_files = []
+            for url in photo_urls:
+                tmp_path = download_photo(url)
+                if tmp_path:
+                    try:
+                        doc.add_picture(tmp_path, width=Inches(5))
+                        doc.add_paragraph()
+                        tmp_files.append(tmp_path)
+                    except Exception as e:
+                        print(f"❌ 사진 삽입 오류: {e}")
+
+            for tmp_path in tmp_files:
+                try:
+                    os.remove(tmp_path)
+                except:
+                    pass
 
         footer = doc.add_paragraph()
         footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -108,7 +162,6 @@ def generate_docx(report: dict, output_path: str) -> bool:
         return False
 
 async def generate_and_send_docx(bot, chat_id, report: dict, message_id: int = None):
-    """보고서 데이터로 Word 파일 생성 후 서무에게 전송"""
     try:
         output_path = f"/tmp/report_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.docx"
 
@@ -133,7 +186,7 @@ async def generate_and_send_docx(bot, chat_id, report: dict, message_id: int = N
             )
 
         os.remove(output_path)
-        print(f"✅ Word 파일 전송 완료: {filename} → {DOCX_RECIPIENT_ID}")
+        print(f"✅ Word 파일 전송 완료: {filename}")
         return True
 
     except Exception as e:

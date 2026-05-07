@@ -65,7 +65,7 @@ def download_photo(url: str) -> str | None:
         return None
 
 def add_photos_grid(doc, photo_paths):
-    """사진을 1페이지에 4장씩 2열 배치"""
+    """사진을 2열로 배치 (1페이지 4장)"""
     if not photo_paths:
         return
 
@@ -77,19 +77,15 @@ def add_photos_grid(doc, photo_paths):
     p.paragraph_format.space_before = Pt(12)
     p.paragraph_format.space_after = Pt(8)
 
-    # 2열 테이블로 사진 배치 (4장씩)
-    for i in range(0, len(photo_paths), 4):
-        batch = photo_paths[i:i+4]
+    # 2장씩 같은 줄에 배치
+    for i in range(0, len(photo_paths), 2):
+        pair = photo_paths[i:i+2]
 
-        photo_table = doc.add_table(rows=2, cols=2)
-        photo_table.style = 'Table Grid'
+        # 2열 테이블 생성
+        photo_table = doc.add_table(rows=1, cols=len(pair))
 
-        for j, path in enumerate(batch):
-            row_idx = j // 2
-            col_idx = j % 2
-            cell = photo_table.rows[row_idx].cells[col_idx]
-            cell.width = Cm(8)
-
+        for j, path in enumerate(pair):
+            cell = photo_table.rows[0].cells[j]
             try:
                 para = cell.paragraphs[0]
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -97,14 +93,7 @@ def add_photos_grid(doc, photo_paths):
                 run.add_picture(path, width=Inches(2.8))
             except Exception as e:
                 print(f"❌ 사진 삽입 오류: {e}")
-                cell.text = "사진 오류"
-
-        # 4장 미만이면 빈 셀 처리
-        for j in range(len(batch), 4):
-            row_idx = j // 2
-            col_idx = j % 2
-            cell = photo_table.rows[row_idx].cells[col_idx]
-            cell.text = ''
+                cell.paragraphs[0].add_run("사진 오류")
 
         doc.add_paragraph()
 
@@ -156,7 +145,7 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '5. 잘된 점', report.get('잘된점'))
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
 
-        # 사진 다운로드
+        # 사진 다운로드 및 삽입
         photo_urls = []
         for i in range(1, 6):
             url = report.get(f'사진{i}링크', '')

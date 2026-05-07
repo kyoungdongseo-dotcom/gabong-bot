@@ -6,3 +6,4 @@ anthropic
 flask
 google-api-python-client>=2.80.0
 pytz>=2024.1
+python-docx

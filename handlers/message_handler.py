@@ -20,56 +20,77 @@ REPORT_GROUP_ID = -1002777848839
 DOCX_RECIPIENT_ID = 754270008
 MEDIA_GROUP_CACHE = {}
 
+# 텍스트 보고서 임시 저장 (사진 나중에 올 때 연결용)
+# {chat_id: {'report': dict, 'photos': [], 'timestamp': float}}
+PENDING_REPORTS = {}
+
 def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     return build('sheets', 'v4', credentials=creds)
 
-async def process_media_group(context, media_group_id: str):
-    """앨범 사진 수집 완료 후 처리"""
-    await asyncio.sleep(3)
-
-    cache = MEDIA_GROUP_CACHE.get(media_group_id)
-    if not cache or cache.get('processed'):
-        return
-
-    MEDIA_GROUP_CACHE[media_group_id]['processed'] = True
-    caption = cache.get('caption', '')
-    photos = cache.get('photos', [])[:5]
-    message = cache.get('message')
-
-    if not caption or not message:
-        return
-
-    report = parse_report(caption)
-    if not report:
-        return
-
-    for i, url in enumerate(photos, 1):
+async def finalize_report(context, report: dict, photos: list, source: str = ""):
+    """보고서 최종 저장 + Word 전송"""
+    for i, url in enumerate(photos[:5], 1):
         report[f'사진{i}링크'] = url
-
     try:
         service = get_sheet_service()
         spreadsheet_id = config.get('spreadsheet_id')
         success = save_report_to_sheet(report, service, spreadsheet_id)
         if success:
+            photo_text = f"📸 사진 {len(photos)}장 링크 저장 완료" if photos else "📸 사진 없음"
             await context.bot.send_message(
                 chat_id=DOCX_RECIPIENT_ID,
-                text=f"✅ 봉사보고서 자동 저장 완료!\n"
-                     f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                     f"📋 {report.get('활동명')}\n"
-                     f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                     f"📸 사진 {len(photos)}장 링크 저장 완료"
+                text=(
+                    f"✅ 봉사보고서 자동 저장 완료!\n"
+                    f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                    f"📋 {report.get('활동명')}\n"
+                    f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+                    f"{photo_text}"
+                )
             )
             await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
     except Exception as e:
-        print(f"❌ 사진 보고서 저장 오류: {e}")
+        print(f"❌ 보고서 저장 오류: {e}")
+
+async def flush_pending_report(context, chat_id: int):
+    """3초 대기 후 사진 없어도 저장"""
+    await asyncio.sleep(3)
+    entry = PENDING_REPORTS.pop(chat_id, None)
+    if not entry or entry.get('saved'):
+        return
+    print(f"⏳ 사진 대기 완료 → 저장 진행 (사진 {len(entry['photos'])}장)")
+    await finalize_report(context, entry['report'], entry['photos'], source="delayed")
+
+async def process_media_group(context, media_group_id: str):
+    """앨범 사진 수집 완료 후 처리"""
+    await asyncio.sleep(3)
+    cache = MEDIA_GROUP_CACHE.get(media_group_id)
+    if not cache or cache.get('processed'):
+        return
+    MEDIA_GROUP_CACHE[media_group_id]['processed'] = True
+    caption = cache.get('caption', '')
+    photos = cache.get('photos', [])[:5]
+    chat_id = cache.get('chat_id')
+
+    # 텍스트 보고서가 이미 PENDING에 있으면 사진만 연결
+    if chat_id and chat_id in PENDING_REPORTS:
+        pending = PENDING_REPORTS.pop(chat_id)
+        if not pending.get('saved'):
+            pending['saved'] = True
+            await finalize_report(context, pending['report'], photos, source="album_linked")
+        return
+
+    # 캡션에 보고서 있는 경우
+    if caption:
+        report = parse_report(caption)
+        if report:
+            await finalize_report(context, report, photos, source="album_caption")
 
 async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.photo:
         return
     if update.effective_user.id == config.get('bot_user_id'):
         return
-
     chat_id = update.effective_chat.id
     if chat_id != REPORT_GROUP_ID:
         return
@@ -86,41 +107,29 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
             MEDIA_GROUP_CACHE[media_group_id] = {
                 'caption': '',
                 'photos': [],
-                'message': update.message,
+                'chat_id': chat_id,
                 'processed': False
             }
             asyncio.create_task(process_media_group(context, media_group_id))
-
         MEDIA_GROUP_CACHE[media_group_id]['photos'].append(photo_url)
         if caption:
             MEDIA_GROUP_CACHE[media_group_id]['caption'] = caption
-            MEDIA_GROUP_CACHE[media_group_id]['message'] = update.message
-
     else:
-        if not caption:
-            return
-        report = parse_report(caption)
-        if not report:
-            return
+        # 사진 1장, 캡션에 보고서 있는 경우
+        if caption:
+            report = parse_report(caption)
+            if report:
+                await finalize_report(context, report, [photo_url], source="single_photo_caption")
+                return
 
-        report['사진1링크'] = photo_url
-
-        try:
-            service = get_sheet_service()
-            spreadsheet_id = config.get('spreadsheet_id')
-            success = save_report_to_sheet(report, service, spreadsheet_id)
-            if success:
-                await context.bot.send_message(
-                    chat_id=DOCX_RECIPIENT_ID,
-                    text=f"✅ 봉사보고서 자동 저장 완료!\n"
-                         f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                         f"📋 {report.get('활동명')}\n"
-                         f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                         f"📸 사진 1장 링크 저장 완료"
-                )
-                await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
-        except Exception as e:
-            print(f"❌ 사진 보고서 저장 오류: {e}")
+        # 캡션 없이 사진만 → PENDING 보고서에 연결
+        if chat_id in PENDING_REPORTS and not PENDING_REPORTS[chat_id].get('saved'):
+            PENDING_REPORTS[chat_id]['photos'].append(photo_url)
+            # 사진이 5장 모이면 바로 저장
+            if len(PENDING_REPORTS[chat_id]['photos']) >= 5:
+                entry = PENDING_REPORTS.pop(chat_id)
+                entry['saved'] = True
+                await finalize_report(context, entry['report'], entry['photos'], source="max_photos")
 
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -144,21 +153,14 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     if chat_id == REPORT_GROUP_ID:
         report = parse_report(text)
         if report:
-            try:
-                service = get_sheet_service()
-                spreadsheet_id = config.get('spreadsheet_id')
-                success = save_report_to_sheet(report, service, spreadsheet_id)
-                if success:
-                    await context.bot.send_message(
-                        chat_id=DOCX_RECIPIENT_ID,
-                        text=f"✅ 봉사보고서 자동 저장 완료!\n"
-                             f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                             f"📋 {report.get('활동명')}\n"
-                             f"👥 총 봉사자: {report.get('총봉사자')}명"
-                    )
-                    await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
-            except Exception as e:
-                print(f"❌ 보고서 저장 오류: {e}")
+            # 즉시 저장하지 않고 3초 대기 → 사진 먼저 올 수도 있음
+            PENDING_REPORTS[chat_id] = {
+                'report': report,
+                'photos': [],
+                'saved': False
+            }
+            asyncio.create_task(flush_pending_report(context, chat_id))
+            return  # 여기서 return, finalize_report에서 저장됨
 
     MY_KEYWORDS = config.get('my_keywords')
     my_keyword_found = any(kw in text for kw in MY_KEYWORDS)

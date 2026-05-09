@@ -4,6 +4,36 @@
 
 ---
 
+## [2026-05-09] Oracle Cloud 마이그레이션 후 대규모 안정화
+
+### ✨ 추가
+- **PID 파일 중복 실행 방지** (main.py) — 이전 프로세스 자동 종료
+- **봇 시작 자가 진단** (_startup_checks) — API키/파일/DB/config 점검
+- **Google Drive DB 자동 백업** (backup_handler.py) — 매일 03:00, /backup 명령어, 텔레그램 DM 전송
+- **봇 상태 명령어** (/status) — 업타임/PID/리마인더/스케줄/백업 현황
+- **join_guard 강화** — allowed_groups 화이트리스트 27개, 미등록 그룹 자동 탈퇴, /add_group 명령어
+- **/ai 그룹 제한** — 허가된 그룹에서만 작동, DM은 항상 허용
+- **exclude_group_names** — 제외 그룹에 이름 추가 가능한 구조
+
+### 🔧 수정
+- **리마인더**: JSON → SQLite 통합, 재시작 후 자동 복원
+- **스케줄러**: 중복 인스턴스 제거, get_scheduler() 단일 공유
+- **check_changes**: 지수 백오프 (60s→600s), CancelledError 처리
+- **asyncio**: get_event_loop() → get_running_loop() 전체 교체
+- **하드코딩 ID** → config 방식으로 전부 이전 (AUTHORIZED_USERS 등)
+- **봉사보고서 사진 대기**: 3초 → 30초 + last_photo_time 추적
+- **사진 크기**: 원본 비율 → 8cm × 5cm 강제 고정
+- **20시 요약**: GROUP_MESSAGES(int/str 키 불일치) → SQLite 직접 조회, 재시작 후에도 유지
+- **백업 방식**: Google Drive(quota 오류) → 로컬 저장 + 텔레그램 DM
+- **cleanup_media_cache**: album_linked 브랜치 누락 버그 수정
+
+### 🔒 보안
+- **관리자 ID**: 하드코딩 → config.get('admin_ids') 통합
+- **config.json / credentials.json**: .gitignore 보호
+- **join_guard**: 비관리자 초대 차단 + 화이트리스트 미등록 그룹 자동 탈퇴
+
+---
+
 ## [2026-05-07]
 
 ### ✨ 추가

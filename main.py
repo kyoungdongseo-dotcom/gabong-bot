@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import pkgutil
 import importlib
 from pathlib import Path
@@ -9,6 +10,30 @@ import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
 from handlers.weekly_report_analyzer import send_weekly_report
 from handlers.monthly_stats_handler import send_monthly_stats
+
+PID_FILE = "./data/bot.pid"
+
+
+def ensure_single_instance():
+    """이전 봇 프로세스 종료 후 현재 PID 저장"""
+    os.makedirs("./data", exist_ok=True)
+    if os.path.exists(PID_FILE):
+        try:
+            old_pid = int(open(PID_FILE).read().strip())
+            os.kill(old_pid, signal.SIGTERM)
+            print(f"[PID] 이전 봇(PID {old_pid}) 종료")
+            import time
+            time.sleep(2)
+        except (ProcessLookupError, ValueError):
+            pass
+        except PermissionError:
+            print(f"[PID] 이전 봇 종료 권한 없음 - 무시")
+    with open(PID_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+    print(f"[PID] 현재 봇 PID {os.getpid()} 등록")
+
+
+ensure_single_instance()
 
 PLUGIN_DIRECTORY = Path("plugins")
 

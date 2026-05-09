@@ -23,7 +23,7 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thread_id = update.message.message_thread_id
     mode = get_chat_mode(chat_id)
     await update.message.reply_text("🤖 AI가 답변 중입니다...")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(None, ask_claude, question, chat_id, user_id, user_name, thread_id, mode)
     await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")
 
@@ -44,7 +44,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = f"다음 대화를 한국어로 요약해주세요:\n{history_text}"
     await update.message.reply_text("🤖 요약 중입니다...")
     mode = get_chat_mode(chat_id)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(None, ask_claude, question, chat_id, update.effective_user.id, update.effective_user.first_name, update.message.message_thread_id, mode)
     await update.message.reply_text(f"📝 대화 요약\n\n{answer}")
 

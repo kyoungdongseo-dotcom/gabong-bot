@@ -8,13 +8,7 @@ from handlers.report_docx_handler import generate_and_send_docx
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-AUTHORIZED_USERS = {
-    414481241,
-    5242761926,
-    1104086017,
-    1062746453,
-    754270008,
-}
+AUTHORIZED_USERS = set(config.get('admin_ids') or [])
 
 REPORT_GROUP_ID = -1002777848839
 DOCX_RECIPIENT_ID = 754270008

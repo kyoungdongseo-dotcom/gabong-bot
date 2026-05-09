@@ -7,12 +7,7 @@ from typing import Dict, List, Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from utils import (
-    load_reminders,
-    save_reminders,
-    get_db_connection,
-    get_config
-)
+from utils import load_reminders, save_reminders
 
 
 async def remind_if_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):

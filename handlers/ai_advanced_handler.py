@@ -89,7 +89,7 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prompt = _build_weekly_prompt(messages, update.effective_chat.title)
     await update.message.reply_text("🤖 주간 보고서를 생성 중입니다...")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(
         None,
         ask_claude,
@@ -121,7 +121,7 @@ async def summary_detailed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history_text = _build_history_text(history)
     question = f"다음 대화를 아주 상세히 한국어로 요약하고, 주요 결정 사항과 액션 항목을 정리해주세요:\n{history_text}"
     await update.message.reply_text("🤖 상세 요약을 생성 중입니다...")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(
         None,
         ask_claude,
@@ -153,7 +153,7 @@ async def summary_brief(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history_text = _build_history_text(history)
     question = f"다음 대화를 간단하고 명확하게 한국어로 요약해 주세요. 핵심 내용만 포함하세요:\n{history_text}"
     await update.message.reply_text("🤖 간단 요약을 생성 중입니다...")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(
         None,
         ask_claude,
@@ -185,7 +185,7 @@ async def send_weekly_report_job(bot):
             continue
 
         prompt = _build_weekly_prompt(messages, group_name)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         answer = await loop.run_in_executor(
             None,
             ask_claude,

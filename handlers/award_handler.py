@@ -37,6 +37,33 @@ AWARD_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last
 AWARD_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
 AWARD_PHOTOS_TTL = 300       # 5분
 
+ADMIN_USER_ID = 97057565
+
+
+def _alias_hint(field: str) -> str:
+    aliases = AWARD_KEY_ALIASES.get(field, [field]) if 'AWARD_KEY_ALIASES' in globals() else [field]
+    return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
+
+
+async def _notify_admin(context, error_text: str):
+    try:
+        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=error_text[:4000])
+    except Exception as e:
+        print(f"❌ 관리자 알림 실패: {e}")
+
+
+async def _send_to_recipient(context, **kwargs):
+    """서무 DM 전송, 실패 시 관리자 백업 알림"""
+    try:
+        if 'document' in kwargs:
+            await context.bot.send_document(chat_id=AWARD_RECIPIENT_ID, **kwargs)
+        else:
+            await context.bot.send_message(chat_id=AWARD_RECIPIENT_ID, **kwargs)
+        return True
+    except Exception as e:
+        await _notify_admin(context, f"❌ 수상보고서 서무 DM 실패: {e}\n내용: {str(kwargs.get('text', ''))[:300]}")
+        return False
+
 
 # ── 파싱 ─────────────────────────────────────────────────────────────────────
 
@@ -288,48 +315,88 @@ def _cleanup_award_photos():
 
 
 async def _finalize_award(context, data: dict, photos: list):
-    if photos:
-        data['사진링크'] = photos[0]
-    loop = asyncio.get_running_loop()
-    sheet_ok = await loop.run_in_executor(None, save_to_sheet, data)
-    tmp_photo = None
-    if data.get('사진링크'):
-        tmp_photo = await loop.run_in_executor(None, download_photo, data['사진링크'])
-    now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
-    output_path = f"/tmp/award_{now_str}.docx"
-    docx_ok = await loop.run_in_executor(None, generate_docx, data, tmp_photo, output_path)
-    if tmp_photo:
+    try:
+        if photos:
+            data['사진링크'] = photos[0]
+        loop = asyncio.get_running_loop()
+
+        # 시트 저장
         try:
-            os.remove(tmp_photo)
-        except Exception:
-            pass
-    summary = (
-        f"✅ 수상보고서 자동 저장 완료\n"
-        f"📌 {data.get('지역')} {data.get('지부')}\n"
-        f"🏆 {data.get('수상명')}\n"
-        f"📅 {data.get('수상일시')}"
-    )
-    if not sheet_ok:
-        summary += "\n⚠️ 스프레드시트 저장 실패"
-    await context.bot.send_message(chat_id=AWARD_RECIPIENT_ID, text=summary)
-    if docx_ok and os.path.exists(output_path):
-        filename = (
-            f"{data.get('지역', '')}_{data.get('지부', '')}_수상보고서"
-            f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
-        ).replace(' ', '_').replace('/', '-')
-        try:
-            with open(output_path, 'rb') as f:
-                await context.bot.send_document(
-                    chat_id=AWARD_RECIPIENT_ID,
-                    document=f,
-                    filename=filename,
-                    caption="📄 수상보고서 Word 파일"
-                )
-        finally:
+            sheet_ok = await loop.run_in_executor(None, save_to_sheet, data)
+        except Exception as e:
+            sheet_ok = False
+            print(f"❌ 수상 시트 저장 예외: {e}")
+
+        # 사진 다운로드
+        tmp_photo = None
+        photo_failed = False
+        if data.get('사진링크'):
             try:
-                os.remove(output_path)
+                tmp_photo = await loop.run_in_executor(None, download_photo, data['사진링크'])
+                photo_failed = (tmp_photo is None)
+            except Exception as e:
+                photo_failed = True
+                print(f"❌ 수상 사진 다운로드 예외: {e}")
+
+        # Word 생성
+        now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
+        output_path = f"/tmp/award_{now_str}.docx"
+        try:
+            docx_ok = await loop.run_in_executor(None, generate_docx, data, tmp_photo, output_path)
+        except Exception as e:
+            docx_ok = False
+            print(f"❌ 수상 Word 생성 예외: {e}")
+
+        if tmp_photo:
+            try:
+                os.remove(tmp_photo)
             except Exception:
                 pass
+
+        # 요약 DM
+        summary = (
+            f"{'✅' if sheet_ok else '⚠️'} 수상보고서 처리 결과\n"
+            f"📌 {data.get('지역')} {data.get('지부')}\n"
+            f"🏆 {data.get('수상명')}\n"
+            f"📅 {data.get('수상일시')}"
+        )
+        warnings = []
+        if not sheet_ok:
+            warnings.append("스프레드시트 저장 실패 — 수동 저장 필요")
+        if not docx_ok:
+            warnings.append("Word 파일 생성 실패 — 텍스트만 저장됨")
+        if photo_failed:
+            warnings.append("사진 다운로드 실패 (파일 링크 만료 가능)")
+        if warnings:
+            summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
+
+        await _send_to_recipient(context, text=summary)
+
+        # Word 파일 전송
+        if docx_ok and os.path.exists(output_path):
+            filename = (
+                f"{data.get('지역', '')}_{data.get('지부', '')}_수상보고서"
+                f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
+            ).replace(' ', '_').replace('/', '-')
+            try:
+                with open(output_path, 'rb') as f:
+                    await _send_to_recipient(
+                        context, document=f, filename=filename,
+                        caption="📄 수상보고서 Word 파일"
+                    )
+            finally:
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+    except Exception as e:
+        import traceback
+        await _notify_admin(
+            context,
+            f"❌ 수상보고서 처리 중 예외 발생: {e}\n"
+            f"데이터: {str(data)[:300]}\n"
+            f"{traceback.format_exc()[:1000]}"
+        )
 
 
 async def _flush_award_report(context, key):
@@ -379,15 +446,16 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if caption and '수상' in caption and '보고' in caption:
         data = parse_award_caption(caption)
         if not data:
-            await context.bot.send_message(
-                chat_id=AWARD_RECIPIENT_ID,
-                text=f"⚠️ 수상보고서 파싱 실패\n캡션:\n{caption[:300]}"
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ 수상보고서 파싱 실패 (수상+보고 키워드 필요)\n캡션:\n{caption[:300]}"
             )
             return
         if '_missing' in data:
-            await context.bot.send_message(
-                chat_id=AWARD_RECIPIENT_ID,
-                text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n캡션:\n{caption[:300]}"
+            hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ 수상보고서 필수 항목 누락:\n  - {hints}\n\n캡션:\n{caption[:300]}"
             )
             return
         await _finalize_award(context, data, [photo_url])
@@ -421,9 +489,10 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         return
     if '_missing' in data:
-        await context.bot.send_message(
-            chat_id=AWARD_RECIPIENT_ID,
-            text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n텍스트:\n{text[:300]}"
+        hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+        await _send_to_recipient(
+            context,
+            text=f"⚠️ 수상보고서 필수 항목 누락:\n  - {hints}\n\n텍스트:\n{text[:300]}"
         )
         return
     key = _award_key(update.effective_chat.id, update.message.message_thread_id)

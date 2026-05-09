@@ -30,13 +30,34 @@ MOU_RECIPIENT_ID = 754270008
 MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간', '사진링크']
 
 MOU_KEY_ALIASES = {
-    '협약명': ['협약명', '보고제목'],
-    '기관명': ['협약기관명', '협약 기관명', '기관명'],
-    '협약일시': ['협약일시', '일시', '체결일'],
-    '대표자': ['대표자', '대표'],
-    '협약기간': ['협약기간', '기간'],
+    '협약명': ['협약명', '보고제목', 'MOU명', '사업명'],
+    '기관명': ['협약기관명', '협약 기관명', '기관명', '협약대상', '협약 대상'],
+    '협약일시': ['협약일시', '일시', '체결일', '협약일', '체결일자', '날짜'],
+    '대표자': ['대표자', '대표', '협약자', '협약 대표자'],
+    '협약기간': ['협약기간', '기간', '유효기간', '계약기간'],
 }
 REQUIRED_FIELDS = {'협약명', '기관명', '협약일시'}
+
+ADMIN_USER_ID = 97057565
+
+
+def _has_mou_keywords(text: str) -> bool:
+    """MOU 또는 협약 + 보고 키워드 감지"""
+    if '보고' not in text:
+        return False
+    return 'MOU' in text.upper() or '협약' in text
+
+
+def _alias_hint(field: str) -> str:
+    aliases = MOU_KEY_ALIASES.get(field, [field])
+    return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
+
+
+async def _notify_admin(context, error_text: str):
+    try:
+        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=error_text[:4000])
+    except Exception as e:
+        print(f"❌ 관리자 알림 실패: {e}")
 
 MOU_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last_photo_time, created}
 MOU_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
@@ -48,13 +69,15 @@ MOU_PHOTOS_TTL = 300       # 5분
 def parse_mou_caption(caption: str) -> dict | None:
     if not caption:
         return None
-    if 'MOU' not in caption.upper() or '보고' not in caption:
+    if not _has_mou_keywords(caption):
         return None
     lines = [l.strip() for l in caption.strip().splitlines() if l.strip()]
     if not lines:
         return None
     지역, 지부 = extract_first_line_meta(
-        lines[0], ['MOU 체결보고서', 'MOU 보고서', 'MOU체결보고', 'MOU보고', 'MOU']
+        lines[0],
+        ['업무협약 보고서', 'MOU 체결보고서', 'MOU 보고서', '협약 보고서',
+         'MOU체결보고', '협약체결보고', '업무협약', '협약보고', 'MOU보고', '협약', 'MOU']
     )
     body = '\n'.join(lines[1:])
     meta = parse_multiline_kv(body, MOU_KEY_ALIASES)
@@ -66,6 +89,8 @@ def parse_mou_caption(caption: str) -> dict | None:
     missing = [f for f in REQUIRED_FIELDS if not data.get(f)]
     if missing:
         data['_missing'] = missing
+    if not 지역 or not 지부:
+        data['_meta_warning'] = '첫 줄에서 지역/지부 추출 실패'
     return data
 
 
@@ -262,50 +287,103 @@ def _cleanup_mou_photos():
         MOU_PENDING_PHOTOS.pop(k, None)
 
 
+async def _send_to_recipient(context, **kwargs):
+    """서무 DM 전송, 실패 시 관리자 백업 알림"""
+    try:
+        if 'document' in kwargs:
+            await context.bot.send_document(chat_id=MOU_RECIPIENT_ID, **kwargs)
+        else:
+            await context.bot.send_message(chat_id=MOU_RECIPIENT_ID, **kwargs)
+        return True
+    except Exception as e:
+        await _notify_admin(context, f"❌ MOU 서무 DM 전송 실패: {e}\n내용: {str(kwargs.get('text', ''))[:300]}")
+        return False
+
+
 async def _finalize_mou(context, data: dict, photos: list):
-    if photos:
-        data['사진링크'] = photos[0]
-    loop = asyncio.get_running_loop()
-    sheet_ok = await loop.run_in_executor(None, save_mou_to_sheet, data)
-    tmp_photo = None
-    if data.get('사진링크'):
-        tmp_photo = await loop.run_in_executor(None, _download_mou_photo, data['사진링크'])
-    now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
-    output_path = f"/tmp/mou_{now_str}.docx"
-    docx_ok = await loop.run_in_executor(None, generate_mou_docx, data, tmp_photo, output_path)
-    if tmp_photo:
+    try:
+        if photos:
+            data['사진링크'] = photos[0]
+        loop = asyncio.get_running_loop()
+
+        # 시트 저장
         try:
-            os.remove(tmp_photo)
-        except Exception:
-            pass
-    summary = (
-        f"✅ MOU 체결보고서 자동 저장 완료\n"
-        f"📌 {data.get('지역')} {data.get('지부')}\n"
-        f"🤝 {data.get('협약명')}\n"
-        f"🏢 {data.get('기관명')}\n"
-        f"📅 {data.get('협약일시')}"
-    )
-    if not sheet_ok:
-        summary += "\n⚠️ 스프레드시트 저장 실패"
-    await context.bot.send_message(chat_id=MOU_RECIPIENT_ID, text=summary)
-    if docx_ok and os.path.exists(output_path):
-        filename = (
-            f"{data.get('지역', '')}_{data.get('지부', '')}_MOU보고서"
-            f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
-        ).replace(' ', '_').replace('/', '-')
-        try:
-            with open(output_path, 'rb') as f:
-                await context.bot.send_document(
-                    chat_id=MOU_RECIPIENT_ID,
-                    document=f,
-                    filename=filename,
-                    caption="📄 MOU 체결보고서 Word 파일"
-                )
-        finally:
+            sheet_ok = await loop.run_in_executor(None, save_mou_to_sheet, data)
+        except Exception as e:
+            sheet_ok = False
+            print(f"❌ MOU 시트 저장 예외: {e}")
+
+        # 사진 다운로드
+        tmp_photo = None
+        photo_failed = False
+        if data.get('사진링크'):
             try:
-                os.remove(output_path)
+                tmp_photo = await loop.run_in_executor(None, _download_mou_photo, data['사진링크'])
+                photo_failed = (tmp_photo is None)
+            except Exception as e:
+                photo_failed = True
+                print(f"❌ MOU 사진 다운로드 예외: {e}")
+
+        # Word 생성
+        now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
+        output_path = f"/tmp/mou_{now_str}.docx"
+        try:
+            docx_ok = await loop.run_in_executor(None, generate_mou_docx, data, tmp_photo, output_path)
+        except Exception as e:
+            docx_ok = False
+            print(f"❌ MOU Word 생성 예외: {e}")
+
+        if tmp_photo:
+            try:
+                os.remove(tmp_photo)
             except Exception:
                 pass
+
+        # 요약 DM
+        summary = (
+            f"{'✅' if sheet_ok else '⚠️'} MOU 체결보고서 처리 결과\n"
+            f"📌 {data.get('지역')} {data.get('지부')}\n"
+            f"🤝 {data.get('협약명')}\n"
+            f"🏢 {data.get('기관명')}\n"
+            f"📅 {data.get('협약일시')}"
+        )
+        warnings = []
+        if not sheet_ok:
+            warnings.append("스프레드시트 저장 실패 — 수동 저장 필요")
+        if not docx_ok:
+            warnings.append("Word 파일 생성 실패 — 텍스트만 저장됨")
+        if photo_failed:
+            warnings.append("사진 다운로드 실패 (파일 링크 만료 가능)")
+        if warnings:
+            summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
+
+        await _send_to_recipient(context, text=summary)
+
+        # Word 파일 전송
+        if docx_ok and os.path.exists(output_path):
+            filename = (
+                f"{data.get('지역', '')}_{data.get('지부', '')}_MOU보고서"
+                f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
+            ).replace(' ', '_').replace('/', '-')
+            try:
+                with open(output_path, 'rb') as f:
+                    await _send_to_recipient(
+                        context, document=f, filename=filename,
+                        caption="📄 MOU 체결보고서 Word 파일"
+                    )
+            finally:
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+    except Exception as e:
+        import traceback
+        await _notify_admin(
+            context,
+            f"❌ MOU 처리 중 예외 발생: {e}\n"
+            f"데이터: {str(data)[:300]}\n"
+            f"{traceback.format_exc()[:1000]}"
+        )
 
 
 async def _flush_mou_report(context, key):
@@ -347,19 +425,19 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = _mou_key(update.effective_chat.id, update.message.message_thread_id)
 
     # 케이스 A/B: 사진+캡션 → 즉시 처리
-    cap_upper = caption.upper()
-    if caption and 'MOU' in cap_upper and '보고' in caption:
+    if caption and _has_mou_keywords(caption):
         data = parse_mou_caption(caption)
         if not data:
-            await context.bot.send_message(
-                chat_id=MOU_RECIPIENT_ID,
-                text=f"⚠️ MOU 보고서 파싱 실패\n캡션:\n{caption[:300]}"
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ MOU 보고서 파싱 실패 (MOU/협약 + 보고 키워드 필요)\n캡션:\n{caption[:300]}"
             )
             return
         if '_missing' in data:
-            await context.bot.send_message(
-                chat_id=MOU_RECIPIENT_ID,
-                text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n캡션:\n{caption[:300]}"
+            hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ MOU 필수 항목 누락:\n  - {hints}\n\n캡션:\n{caption[:300]}"
             )
             return
         await _finalize_mou(context, data, [photo_url])
@@ -387,15 +465,16 @@ async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.message_thread_id != MOU_TOPIC_ID:
         return
     text = update.message.text
-    if 'MOU' not in text.upper() or '보고' not in text:
+    if not _has_mou_keywords(text):
         return
     data = parse_mou_caption(text)
     if not data:
         return
     if '_missing' in data:
-        await context.bot.send_message(
-            chat_id=MOU_RECIPIENT_ID,
-            text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n텍스트:\n{text[:300]}"
+        hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+        await _send_to_recipient(
+            context,
+            text=f"⚠️ MOU 필수 항목 누락:\n  - {hints}\n\n텍스트:\n{text[:300]}"
         )
         return
     key = _mou_key(update.effective_chat.id, update.message.message_thread_id)

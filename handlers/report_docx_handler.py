@@ -146,26 +146,35 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
 
         # 사진 다운로드 및 삽입
-        photo_urls = []
-        for i in range(1, 6):
-            url = report.get(f'사진{i}링크', '')
-            if url:
-                photo_urls.append(url)
+        photo_urls = [report.get(f'사진{i}링크', '') for i in range(1, 6)
+                      if report.get(f'사진{i}링크')]
 
         if photo_urls:
             tmp_files = []
+            failed_count = 0
             for url in photo_urls:
                 tmp_path = download_photo(url)
                 if tmp_path:
                     tmp_files.append(tmp_path)
+                else:
+                    failed_count += 1
 
             if tmp_files:
                 add_photos_grid(doc, tmp_files)
 
+            if failed_count > 0:
+                note_p = doc.add_paragraph()
+                note_run = note_p.add_run(
+                    f"⚠️ 사진 {len(tmp_files)}장 첨부 완료 / {failed_count}장 다운로드 실패"
+                    " (텔레그램 파일 링크 만료 가능)"
+                )
+                note_run.font.size = Pt(9)
+                note_run.font.color.rgb = RGBColor(0xFF, 0x66, 0x00)
+
             for tmp_path in tmp_files:
                 try:
                     os.remove(tmp_path)
-                except:
+                except Exception:
                     pass
 
         footer = doc.add_paragraph()

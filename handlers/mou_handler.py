@@ -1,8 +1,7 @@
-"""수상보고서 처리 핸들러"""
+"""MOU 체결보고서 처리 핸들러"""
 
 import asyncio
 import os
-import re
 import tempfile
 import time
 from datetime import datetime
@@ -24,46 +23,41 @@ from handlers.report_parser_utils import parse_multiline_kv, extract_first_line_
 
 KST = pytz.timezone('Asia/Seoul')
 
-AWARD_SPREADSHEET_ID = '1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4'
-AWARD_SHEET_NAME = '수상보고창'
-AWARD_GROUP_ID = -1002777848839
-AWARD_TOPIC_ID = 3553
-AWARD_RECIPIENT_ID = 754270008
+MOU_GROUP_ID = -1002777848839
+MOU_TOPIC_ID = 3225
+MOU_RECIPIENT_ID = 754270008
 
-HEADERS = ['등록일시', '지역', '지부', '수상명', '수상일시', '장소',
-           '수여자', '수상자', '수상내용', '사진링크']
+MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간', '사진링크']
 
-AWARD_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last_photo_time, created}
-AWARD_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
-AWARD_PHOTOS_TTL = 300       # 5분
+MOU_KEY_ALIASES = {
+    '협약명': ['협약명', '보고제목'],
+    '기관명': ['협약기관명', '협약 기관명', '기관명'],
+    '협약일시': ['협약일시', '일시', '체결일'],
+    '대표자': ['대표자', '대표'],
+    '협약기간': ['협약기간', '기간'],
+}
+REQUIRED_FIELDS = {'협약명', '기관명', '협약일시'}
+
+MOU_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last_photo_time, created}
+MOU_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
+MOU_PHOTOS_TTL = 300       # 5분
 
 
 # ── 파싱 ─────────────────────────────────────────────────────────────────────
 
-AWARD_KEY_ALIASES = {
-    '수상명': ['수상명', '보고제목', '내용'],
-    '수상일시': ['수상일시', '행사일시', '일시', '일자', '날짜'],
-    '수여자': ['수여자', '시상자'],
-    '수상자': ['수상자'],
-    '수상내용': ['수상내용', '수상내역'],
-    '장소': ['장소', '행사장소'],
-}
-REQUIRED_FIELDS = {'수상명', '수상일시', '수상자'}
-
-
-def parse_award_caption(caption: str) -> dict | None:
+def parse_mou_caption(caption: str) -> dict | None:
     if not caption:
         return None
-    if '수상' not in caption or '보고' not in caption:
+    if 'MOU' not in caption.upper() or '보고' not in caption:
         return None
     lines = [l.strip() for l in caption.strip().splitlines() if l.strip()]
     if not lines:
         return None
     지역, 지부 = extract_first_line_meta(
-        lines[0], ['수상보고서', '수상보고', '보고서', '보고']
+        lines[0], ['MOU 체결보고서', 'MOU 보고서', 'MOU체결보고', 'MOU보고', 'MOU']
     )
     body = '\n'.join(lines[1:])
-    meta = parse_multiline_kv(body, AWARD_KEY_ALIASES)
+    meta = parse_multiline_kv(body, MOU_KEY_ALIASES)
     data: dict = {
         '등록일시': datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S'),
         '지역': 지역, '지부': 지부, '사진링크': '',
@@ -77,49 +71,50 @@ def parse_award_caption(caption: str) -> dict | None:
 
 # ── Google Sheets ─────────────────────────────────────────────────────────────
 
-def _get_sheet_service():
+def _get_mou_service():
     scopes = config.get('google_scopes', ['https://www.googleapis.com/auth/spreadsheets'])
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=scopes)
     return build('sheets', 'v4', credentials=creds)
 
 
-def _ensure_header(service):
+def _ensure_mou_header(service, spreadsheet_id: str):
     result = service.spreadsheets().values().get(
-        spreadsheetId=AWARD_SPREADSHEET_ID,
-        range=f'{AWARD_SHEET_NAME}!A1:J1'
+        spreadsheetId=spreadsheet_id,
+        range='협약보고창!A1:I1'
     ).execute()
     existing = result.get('values', [[]])
     if not existing or not any(existing[0]):
         service.spreadsheets().values().update(
-            spreadsheetId=AWARD_SPREADSHEET_ID,
-            range=f'{AWARD_SHEET_NAME}!A1',
+            spreadsheetId=spreadsheet_id,
+            range='협약보고창!A1',
             valueInputOption='RAW',
-            body={'values': [HEADERS]}
+            body={'values': [MOU_HEADERS]}
         ).execute()
 
 
-def save_to_sheet(data: dict) -> bool:
+def save_mou_to_sheet(data: dict) -> bool:
     try:
-        service = _get_sheet_service()
-        _ensure_header(service)
-        row = [data.get(h, '') for h in HEADERS]
+        spreadsheet_id = config.get('spreadsheet_id', '')
+        service = _get_mou_service()
+        _ensure_mou_header(service, spreadsheet_id)
+        row = [data.get(h, '') for h in MOU_HEADERS]
         service.spreadsheets().values().append(
-            spreadsheetId=AWARD_SPREADSHEET_ID,
-            range=f'{AWARD_SHEET_NAME}!A:K',
+            spreadsheetId=spreadsheet_id,
+            range='협약보고창!A:I',
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}
         ).execute()
-        print(f"✅ 수상보고서 저장 완료: {data.get('수상명')}")
+        print(f"✅ MOU 보고서 저장 완료: {data.get('협약명')}")
         return True
     except Exception as e:
-        print(f"❌ 수상보고서 저장 오류: {e}")
+        print(f"❌ MOU 보고서 저장 오류: {e}")
         return False
 
 
 # ── 사진 다운로드 ─────────────────────────────────────────────────────────────
 
-def download_photo(url: str) -> str | None:
+def _download_mou_photo(url: str) -> str | None:
     try:
         token = config.get('telegram_token')
         full_url = url if url.startswith('http') else f"https://api.telegram.org/file/bot{token}/{url}"
@@ -132,7 +127,7 @@ def download_photo(url: str) -> str | None:
             return tmp.name
         return None
     except Exception as e:
-        print(f"❌ 사진 다운로드 오류: {e}")
+        print(f"❌ MOU 사진 다운로드 오류: {e}")
         return None
 
 
@@ -148,15 +143,6 @@ def _set_cell_bg(cell, color: str):
     tcPr.append(shd)
 
 
-def _set_para_bg(para, color: str):
-    pPr = para._p.get_or_add_pPr()
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), color)
-    pPr.append(shd)
-
-
 def _label(cell, text: str):
     cell.text = text
     run = cell.paragraphs[0].runs[0]
@@ -170,7 +156,7 @@ def _value(cell, text: str):
     cell.paragraphs[0].runs[0].font.size = Pt(10)
 
 
-def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
+def generate_mou_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
     try:
         doc = Document()
         for section in doc.sections:
@@ -179,18 +165,18 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
             section.left_margin = Cm(2.5)
             section.right_margin = Cm(2.5)
 
-        # 1. 제목
+        # 제목
         title_p = doc.add_paragraph()
         title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_run = title_p.add_run(
-            f"{data.get('지역', '')} {data.get('지부', '')}\n자원봉사 수상보고서"
+            f"{data.get('지역', '')} {data.get('지부', '')}\nMOU 체결 보고서"
         )
         title_run.bold = True
         title_run.font.size = Pt(16)
         title_run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
         title_p.paragraph_format.space_after = Pt(12)
 
-        # 2. 정보 테이블 (4열: label/value/label/value)
+        # 정보 테이블
         table = doc.add_table(rows=0, cols=4)
         table.style = 'Table Grid'
         table.columns[0].width = Cm(3)
@@ -198,42 +184,35 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
         table.columns[2].width = Cm(3)
         table.columns[3].width = Cm(4.5)
 
-        # 행 1: 수상명 (값 3열 병합)
         r0 = table.add_row()
-        _label(r0.cells[0], '수상명')
+        _label(r0.cells[0], '협약명')
         r0.cells[1].merge(r0.cells[3])
-        _value(r0.cells[1], data.get('수상명'))
+        _value(r0.cells[1], data.get('협약명'))
 
-        # 행 2: 장소 | 수상일시
         r1 = table.add_row()
-        _label(r1.cells[0], '장소')
-        _value(r1.cells[1], data.get('장소'))
-        _label(r1.cells[2], '수상일시')
-        _value(r1.cells[3], data.get('수상일시'))
+        _label(r1.cells[0], '기관명')
+        r1.cells[1].merge(r1.cells[3])
+        _value(r1.cells[1], data.get('기관명'))
 
-        # 행 3: 수여자 | 수상자
         r2 = table.add_row()
-        _label(r2.cells[0], '수여자')
-        _value(r2.cells[1], data.get('수여자'))
-        _label(r2.cells[2], '수상자')
-        _value(r2.cells[3], data.get('수상자'))
+        _label(r2.cells[0], '협약일시')
+        _value(r2.cells[1], data.get('협약일시'))
+        _label(r2.cells[2], '대표자')
+        _value(r2.cells[3], data.get('대표자'))
 
-        # 행 4: 수상내용 (값 3열 병합)
         r3 = table.add_row()
-        _label(r3.cells[0], '수상내용')
+        _label(r3.cells[0], '협약기간')
         r3.cells[1].merge(r3.cells[3])
-        _value(r3.cells[1], data.get('수상내용'))
+        _value(r3.cells[1], data.get('협약기간'))
 
         doc.add_paragraph()
 
-        # 3. 사진 섹션
+        # 사진 섹션
         photo_title = doc.add_paragraph()
         photo_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        pt_run = photo_title.add_run('상장, 상패 사진')
+        pt_run = photo_title.add_run('협약 현장 사진')
         pt_run.bold = True
         pt_run.font.size = Pt(11)
-        _set_para_bg(photo_title, 'CCCCCC')
-        photo_title.paragraph_format.space_after = Pt(6)
 
         if photo_path and os.path.exists(photo_path):
             try:
@@ -241,89 +220,86 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
                 photo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 photo_p.add_run().add_picture(photo_path, width=Cm(12))
             except Exception as e:
-                print(f"❌ 사진 삽입 오류: {e}")
+                print(f"❌ MOU 사진 삽입 오류: {e}")
                 doc.add_paragraph('[사진 삽입 실패]').alignment = WD_ALIGN_PARAGRAPH.CENTER
         else:
             doc.add_paragraph('[사진 없음]').alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph()
 
-        # 4. 하단
+        # 하단
         footer_p = doc.add_paragraph()
         footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer_p.add_run('위와 같이 보고합니다.\n').font.size = Pt(11)
 
         date_p = doc.add_paragraph()
         date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        date_p.add_run(data.get('수상일시', '')).font.size = Pt(11)
+        date_p.add_run(data.get('협약일시', '')).font.size = Pt(11)
 
-        reporter_p = doc.add_paragraph()
-        reporter_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        reporter_run = reporter_p.add_run(
-            f"{data.get('지역', '')} {data.get('지부', '')}"
-        )
-        reporter_run.font.size = Pt(11)
+        rep_p = doc.add_paragraph()
+        rep_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        rep_p.add_run(f"{data.get('지역', '')} {data.get('지부', '')}").font.size = Pt(11)
 
         doc.save(output_path)
-        print(f"✅ 수상보고서 Word 생성 완료: {output_path}")
+        print(f"✅ MOU Word 생성 완료: {output_path}")
         return True
-
     except Exception as e:
-        print(f"❌ Word 생성 오류: {e}")
+        print(f"❌ MOU Word 생성 오류: {e}")
         return False
 
 
 # ── 사진 대기 관리 ─────────────────────────────────────────────────────────────
 
-def _award_key(chat_id: int, thread_id):
+def _mou_key(chat_id: int, thread_id):
     return (chat_id, thread_id or 0)
 
 
-def _cleanup_award_photos():
+def _cleanup_mou_photos():
     now = time.time()
-    expired = [k for k, v in list(AWARD_PENDING_PHOTOS.items())
-               if now - v.get('created', 0) > AWARD_PHOTOS_TTL]
+    expired = [k for k, v in list(MOU_PENDING_PHOTOS.items())
+               if now - v.get('created', 0) > MOU_PHOTOS_TTL]
     for k in expired:
-        AWARD_PENDING_PHOTOS.pop(k, None)
+        MOU_PENDING_PHOTOS.pop(k, None)
 
 
-async def _finalize_award(context, data: dict, photos: list):
+async def _finalize_mou(context, data: dict, photos: list):
     if photos:
         data['사진링크'] = photos[0]
     loop = asyncio.get_running_loop()
-    sheet_ok = await loop.run_in_executor(None, save_to_sheet, data)
+    sheet_ok = await loop.run_in_executor(None, save_mou_to_sheet, data)
     tmp_photo = None
     if data.get('사진링크'):
-        tmp_photo = await loop.run_in_executor(None, download_photo, data['사진링크'])
+        tmp_photo = await loop.run_in_executor(None, _download_mou_photo, data['사진링크'])
     now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
-    output_path = f"/tmp/award_{now_str}.docx"
-    docx_ok = await loop.run_in_executor(None, generate_docx, data, tmp_photo, output_path)
+    output_path = f"/tmp/mou_{now_str}.docx"
+    docx_ok = await loop.run_in_executor(None, generate_mou_docx, data, tmp_photo, output_path)
     if tmp_photo:
         try:
             os.remove(tmp_photo)
         except Exception:
             pass
     summary = (
-        f"✅ 수상보고서 자동 저장 완료\n"
+        f"✅ MOU 체결보고서 자동 저장 완료\n"
         f"📌 {data.get('지역')} {data.get('지부')}\n"
-        f"🏆 {data.get('수상명')}\n"
-        f"📅 {data.get('수상일시')}"
+        f"🤝 {data.get('협약명')}\n"
+        f"🏢 {data.get('기관명')}\n"
+        f"📅 {data.get('협약일시')}"
     )
     if not sheet_ok:
         summary += "\n⚠️ 스프레드시트 저장 실패"
-    await context.bot.send_message(chat_id=AWARD_RECIPIENT_ID, text=summary)
+    await context.bot.send_message(chat_id=MOU_RECIPIENT_ID, text=summary)
     if docx_ok and os.path.exists(output_path):
         filename = (
-            f"{data.get('지역', '')}_{data.get('지부', '')}_수상보고서"
+            f"{data.get('지역', '')}_{data.get('지부', '')}_MOU보고서"
             f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
         ).replace(' ', '_').replace('/', '-')
         try:
             with open(output_path, 'rb') as f:
                 await context.bot.send_document(
-                    chat_id=AWARD_RECIPIENT_ID,
+                    chat_id=MOU_RECIPIENT_ID,
                     document=f,
                     filename=filename,
-                    caption="📄 수상보고서 Word 파일"
+                    caption="📄 MOU 체결보고서 Word 파일"
                 )
         finally:
             try:
@@ -332,12 +308,12 @@ async def _finalize_award(context, data: dict, photos: list):
                 pass
 
 
-async def _flush_award_report(context, key):
+async def _flush_mou_report(context, key):
     """60초 기다린 후, 사진이 계속 오면 5초씩 연장 (최대 5분)"""
     start = time.time()
     await asyncio.sleep(60)
     while True:
-        entry = AWARD_PENDING_REPORTS.get(key)
+        entry = MOU_PENDING_REPORTS.get(key)
         if not entry or entry.get('saved'):
             return
         last_photo = entry.get('last_photo_time', 0)
@@ -346,94 +322,90 @@ async def _flush_award_report(context, key):
             await asyncio.sleep(5)
             continue
         break
-    entry = AWARD_PENDING_REPORTS.pop(key, None)
+    entry = MOU_PENDING_REPORTS.pop(key, None)
     if not entry or entry.get('saved'):
         return
     entry['saved'] = True
-    await _finalize_award(context, entry['data'], entry['photos'])
+    await _finalize_mou(context, entry['data'], entry['photos'])
 
 
 # ── 메인 핸들러 ───────────────────────────────────────────────────────────────
 
-def _award_parse_and_check(text: str, source_label: str, bot_coro_factory):
-    """parse 후 누락 필드 확인. (코루틴 팩토리 패턴 대신 직접 반환)"""
-    pass  # 아래 핸들러에서 인라인으로 처리
-
-
-async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """사진 수신 처리 — 캡션 있음/없음 모두 대응 (케이스 A~G)"""
     if not update.message or not update.message.photo:
         return
-    if update.effective_chat.id != AWARD_GROUP_ID:
+    if update.effective_chat.id != MOU_GROUP_ID:
         return
-    if update.message.message_thread_id != AWARD_TOPIC_ID:
+    if update.message.message_thread_id != MOU_TOPIC_ID:
         return
 
     caption = update.message.caption or ''
     photo = update.message.photo[-1]
     photo_file = await context.bot.get_file(photo.file_id)
     photo_url = photo_file.file_path
-    key = _award_key(update.effective_chat.id, update.message.message_thread_id)
+    key = _mou_key(update.effective_chat.id, update.message.message_thread_id)
 
     # 케이스 A/B: 사진+캡션 → 즉시 처리
-    if caption and '수상' in caption and '보고' in caption:
-        data = parse_award_caption(caption)
+    cap_upper = caption.upper()
+    if caption and 'MOU' in cap_upper and '보고' in caption:
+        data = parse_mou_caption(caption)
         if not data:
             await context.bot.send_message(
-                chat_id=AWARD_RECIPIENT_ID,
-                text=f"⚠️ 수상보고서 파싱 실패\n캡션:\n{caption[:300]}"
+                chat_id=MOU_RECIPIENT_ID,
+                text=f"⚠️ MOU 보고서 파싱 실패\n캡션:\n{caption[:300]}"
             )
             return
         if '_missing' in data:
             await context.bot.send_message(
-                chat_id=AWARD_RECIPIENT_ID,
+                chat_id=MOU_RECIPIENT_ID,
                 text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n캡션:\n{caption[:300]}"
             )
             return
-        await _finalize_award(context, data, [photo_url])
+        await _finalize_mou(context, data, [photo_url])
         return
 
-    # 케이스 C/D/G: 텍스트 보고서 등록 후 사진 도착
-    if key in AWARD_PENDING_REPORTS and not AWARD_PENDING_REPORTS[key].get('saved'):
-        AWARD_PENDING_REPORTS[key]['photos'].append(photo_url)
-        AWARD_PENDING_REPORTS[key]['last_photo_time'] = time.time()
+    # 케이스 C/D/G: 텍스트 후 사진 도착
+    if key in MOU_PENDING_REPORTS and not MOU_PENDING_REPORTS[key].get('saved'):
+        MOU_PENDING_REPORTS[key]['photos'].append(photo_url)
+        MOU_PENDING_REPORTS[key]['last_photo_time'] = time.time()
         return
 
     # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 보관
-    _cleanup_award_photos()
-    if key not in AWARD_PENDING_PHOTOS:
-        AWARD_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
-    AWARD_PENDING_PHOTOS[key]['photos'].append(photo_url)
+    _cleanup_mou_photos()
+    if key not in MOU_PENDING_PHOTOS:
+        MOU_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
+    MOU_PENDING_PHOTOS[key]['photos'].append(photo_url)
 
 
-async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """텍스트 보고서 수신 → PENDING 등록 (케이스 C~G 지원)"""
     if not update.message or not update.message.text:
         return
-    if update.effective_chat.id != AWARD_GROUP_ID:
+    if update.effective_chat.id != MOU_GROUP_ID:
         return
-    if update.message.message_thread_id != AWARD_TOPIC_ID:
+    if update.message.message_thread_id != MOU_TOPIC_ID:
         return
     text = update.message.text
-    if '수상' not in text or '보고' not in text:
+    if 'MOU' not in text.upper() or '보고' not in text:
         return
-    data = parse_award_caption(text)
+    data = parse_mou_caption(text)
     if not data:
         return
     if '_missing' in data:
         await context.bot.send_message(
-            chat_id=AWARD_RECIPIENT_ID,
+            chat_id=MOU_RECIPIENT_ID,
             text=f"⚠️ 필수 항목 누락: {', '.join(data['_missing'])}\n텍스트:\n{text[:300]}"
         )
         return
-    key = _award_key(update.effective_chat.id, update.message.message_thread_id)
+    key = _mou_key(update.effective_chat.id, update.message.message_thread_id)
     # 케이스 F/G: 먼저 도착한 사진 연결
     pre_photos: list = []
-    if key in AWARD_PENDING_PHOTOS:
-        pre_photos = AWARD_PENDING_PHOTOS.pop(key)['photos']
-    AWARD_PENDING_REPORTS[key] = {
+    if key in MOU_PENDING_PHOTOS:
+        pre_photos = MOU_PENDING_PHOTOS.pop(key)['photos']
+    MOU_PENDING_REPORTS[key] = {
         'data': data, 'photos': pre_photos, 'saved': False,
         'last_photo_time': time.time() if pre_photos else 0,
         'created': time.time(),
     }
-    asyncio.create_task(_flush_award_report(context, key))
+    asyncio.create_task(_flush_mou_report(context, key))

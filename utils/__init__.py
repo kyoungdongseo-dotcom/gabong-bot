@@ -243,9 +243,14 @@ async def send_daily_summary(bot):
             print(f"요약 오류: {e}")
 
 async def check_changes(app):
+    consecutive_errors = 0
+    NORMAL_INTERVAL = 60       # 정상 시 60초마다
+    MAX_BACKOFF = 600          # 오류 시 최대 10분
+
     while True:
         try:
             rows = get_sheet_data()
+            consecutive_errors = 0
             cache = load_cache()
             new_cache = {}
             for i, row in enumerate(rows[4:9]):
@@ -255,12 +260,31 @@ async def check_changes(app):
                 if key in cache and cache[key] != row_str and row[0]:
                     GROUP_ID = config.get('group_id')
                     TOPIC_ID = config.get('topic_id')
-                    msg = f"📋 업무 현황 변경!\n\n과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}\n금주 진행 일정: {row[8]}\n금주 진행 현황: {row[9]}"
+                    msg = (
+                        f"📋 업무 현황 변경!\n\n"
+                        f"과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}\n"
+                        f"금주 진행 일정: {row[8]}\n금주 진행 현황: {row[9]}"
+                    )
                     await app.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
             save_cache(new_cache)
+            await asyncio.sleep(NORMAL_INTERVAL)
+
+        except asyncio.CancelledError:
+            print("[Sheets] check_changes 태스크 종료")
+            return
+
         except Exception as e:
-            print(f"오류: {e}")
-        await asyncio.sleep(60)
+            consecutive_errors += 1
+            wait = min(NORMAL_INTERVAL * consecutive_errors, MAX_BACKOFF)
+            print(f"[Sheets] 오류 ({consecutive_errors}회 연속): {e}")
+            if consecutive_errors == 1:
+                print("[Sheets] Google 서비스 계정 키가 유효한지 확인하세요.")
+            print(f"[Sheets] {wait}초 후 재시도...")
+            try:
+                await asyncio.sleep(wait)
+            except asyncio.CancelledError:
+                print("[Sheets] check_changes 태스크 종료")
+                return
 
 # 런타임 데이터 (임시로 여기 둠, 나중에 별도 모듈로)
 CHAT_HISTORY = {}

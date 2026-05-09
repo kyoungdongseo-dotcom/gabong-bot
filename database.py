@@ -61,6 +61,44 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pending_reports (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type     TEXT NOT NULL,
+            pending_key     TEXT NOT NULL,
+            data_json       TEXT NOT NULL,
+            photos_json     TEXT NOT NULL,
+            last_photo_time REAL DEFAULT 0,
+            created         REAL NOT NULL,
+            UNIQUE(report_type, pending_key)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pending_photos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type     TEXT NOT NULL,
+            pending_key     TEXT NOT NULL,
+            photos_json     TEXT NOT NULL,
+            created         REAL NOT NULL,
+            UNIQUE(report_type, pending_key)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS recent_submissions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type     TEXT NOT NULL,
+            submission_hash TEXT NOT NULL,
+            summary         TEXT,
+            submitted_at    REAL NOT NULL
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_recent_sub_type
+        ON recent_submissions(report_type, submitted_at)
+    """)
+
     conn.commit()
     conn.close()
     print("✅ DB 초기화 완료")
@@ -153,5 +191,141 @@ def log_error(error_type, description, stack_trace=""):
         INSERT INTO error_logs (error_type, description, stack_trace)
         VALUES (?,?,?)
     """, (error_type, description, stack_trace))
+    conn.commit()
+    conn.close()
+
+
+# ── PENDING 보고서 영속화 ─────────────────────────────────────────────────────
+
+def save_pending_report(report_type: str, pending_key: str, data: dict,
+                        photos: list, last_photo_time: float, created: float):
+    conn = get_conn()
+    conn.execute("""
+        INSERT OR REPLACE INTO pending_reports
+        (report_type, pending_key, data_json, photos_json, last_photo_time, created)
+        VALUES (?,?,?,?,?,?)
+    """, (report_type, pending_key, json.dumps(data, ensure_ascii=False),
+          json.dumps(photos, ensure_ascii=False), last_photo_time, created))
+    conn.commit()
+    conn.close()
+
+
+def delete_pending_report(report_type: str, pending_key: str):
+    conn = get_conn()
+    conn.execute("""
+        DELETE FROM pending_reports WHERE report_type=? AND pending_key=?
+    """, (report_type, pending_key))
+    conn.commit()
+    conn.close()
+
+
+def load_pending_reports(report_type: str, max_age_sec: float = 600) -> list:
+    """봇 재시작 시 복원용. 너무 오래된 항목은 제외."""
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - max_age_sec
+    rows = conn.execute("""
+        SELECT * FROM pending_reports
+        WHERE report_type=? AND created >= ?
+    """, (report_type, threshold)).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            'pending_key': r['pending_key'],
+            'data': json.loads(r['data_json']),
+            'photos': json.loads(r['photos_json']),
+            'last_photo_time': r['last_photo_time'],
+            'created': r['created'],
+        })
+    return result
+
+
+def cleanup_pending_reports_db(max_age_sec: float = 600):
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - max_age_sec
+    conn.execute("DELETE FROM pending_reports WHERE created < ?", (threshold,))
+    conn.commit()
+    conn.close()
+
+
+def save_pending_photos_db(report_type: str, pending_key: str,
+                           photos: list, created: float):
+    conn = get_conn()
+    conn.execute("""
+        INSERT OR REPLACE INTO pending_photos
+        (report_type, pending_key, photos_json, created)
+        VALUES (?,?,?,?)
+    """, (report_type, pending_key,
+          json.dumps(photos, ensure_ascii=False), created))
+    conn.commit()
+    conn.close()
+
+
+def delete_pending_photos_db(report_type: str, pending_key: str):
+    conn = get_conn()
+    conn.execute("""
+        DELETE FROM pending_photos WHERE report_type=? AND pending_key=?
+    """, (report_type, pending_key))
+    conn.commit()
+    conn.close()
+
+
+def load_pending_photos_db(report_type: str, max_age_sec: float = 300) -> list:
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - max_age_sec
+    rows = conn.execute("""
+        SELECT * FROM pending_photos
+        WHERE report_type=? AND created >= ?
+    """, (report_type, threshold)).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            'pending_key': r['pending_key'],
+            'photos': json.loads(r['photos_json']),
+            'created': r['created'],
+        })
+    return result
+
+
+def cleanup_pending_photos_db(max_age_sec: float = 300):
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - max_age_sec
+    conn.execute("DELETE FROM pending_photos WHERE created < ?", (threshold,))
+    conn.commit()
+    conn.close()
+
+
+# ── 중복 제출 감지 ─────────────────────────────────────────────────────────────
+
+def record_submission(report_type: str, submission_hash: str, summary: str = ''):
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO recent_submissions (report_type, submission_hash, summary, submitted_at)
+        VALUES (?, ?, ?, ?)
+    """, (report_type, submission_hash, summary, datetime.now().timestamp()))
+    conn.commit()
+    conn.close()
+
+
+def find_recent_submission(report_type: str, submission_hash: str,
+                           window_sec: float = 600) -> dict | None:
+    """최근 N초 내 동일 hash 제출이 있으면 반환"""
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - window_sec
+    row = conn.execute("""
+        SELECT * FROM recent_submissions
+        WHERE report_type=? AND submission_hash=? AND submitted_at >= ?
+        ORDER BY submitted_at DESC LIMIT 1
+    """, (report_type, submission_hash, threshold)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def cleanup_recent_submissions(max_age_sec: float = 86400):
+    """24시간 이상 된 항목 정리"""
+    conn = get_conn()
+    threshold = datetime.now().timestamp() - max_age_sec
+    conn.execute("DELETE FROM recent_submissions WHERE submitted_at < ?", (threshold,))
     conn.commit()
     conn.close()

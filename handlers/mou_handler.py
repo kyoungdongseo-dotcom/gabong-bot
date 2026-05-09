@@ -27,7 +27,8 @@ MOU_GROUP_ID = -1002777848839
 MOU_TOPIC_ID = 3225
 MOU_RECIPIENT_ID = 754270008
 
-MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간', '사진링크']
+MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간',
+               '사진1링크', '사진2링크', '사진3링크', '사진4링크', '사진5링크']
 
 MOU_KEY_ALIASES = {
     '협약명': ['협약명', '보고제목', 'MOU명', '사업명'],
@@ -61,6 +62,7 @@ async def _notify_admin(context, error_text: str):
 
 MOU_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last_photo_time, created}
 MOU_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
+MOU_MEDIA_CACHE = {}       # media_group_id -> {photos, caption, processed, created}
 MOU_PHOTOS_TTL = 300       # 5분
 
 
@@ -105,7 +107,7 @@ def _get_mou_service():
 def _ensure_mou_header(service, spreadsheet_id: str):
     result = service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
-        range='협약보고창!A1:I1'
+        range='협약보고창!A1:M1'
     ).execute()
     existing = result.get('values', [[]])
     if not existing or not any(existing[0]):
@@ -125,7 +127,7 @@ def save_mou_to_sheet(data: dict) -> bool:
         row = [data.get(h, '') for h in MOU_HEADERS]
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range='협약보고창!A:I',
+            range='협약보고창!A:M',
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}
@@ -181,7 +183,12 @@ def _value(cell, text: str):
     cell.paragraphs[0].runs[0].font.size = Pt(10)
 
 
-def generate_mou_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
+def generate_mou_docx(data: dict, photo_paths, output_path: str) -> bool:
+    """photo_paths: list[str] (여러 장) 또는 단일 str/None"""
+    if photo_paths is None:
+        photo_paths = []
+    elif isinstance(photo_paths, str):
+        photo_paths = [photo_paths]
     try:
         doc = Document()
         for section in doc.sections:
@@ -232,22 +239,17 @@ def generate_mou_docx(data: dict, photo_path: str | None, output_path: str) -> b
 
         doc.add_paragraph()
 
-        # 사진 섹션
-        photo_title = doc.add_paragraph()
-        photo_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        pt_run = photo_title.add_run('협약 현장 사진')
-        pt_run.bold = True
-        pt_run.font.size = Pt(11)
-
-        if photo_path and os.path.exists(photo_path):
-            try:
-                photo_p = doc.add_paragraph()
-                photo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                photo_p.add_run().add_picture(photo_path, width=Cm(12))
-            except Exception as e:
-                print(f"❌ MOU 사진 삽입 오류: {e}")
-                doc.add_paragraph('[사진 삽입 실패]').alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # 사진 섹션 (다중 사진 그리드)
+        from handlers.report_base import add_photos_grid
+        valid_paths = [p for p in photo_paths if p and os.path.exists(p)]
+        if valid_paths:
+            add_photos_grid(doc, valid_paths, title='협약 현장 사진')
         else:
+            photo_title = doc.add_paragraph()
+            photo_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pt_run = photo_title.add_run('협약 현장 사진')
+            pt_run.bold = True
+            pt_run.font.size = Pt(11)
             doc.add_paragraph('[사진 없음]').alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph()
@@ -279,12 +281,73 @@ def _mou_key(chat_id: int, thread_id):
     return (chat_id, thread_id or 0)
 
 
+def _key_to_str(key) -> str:
+    return f"{key[0]}:{key[1]}"
+
+
+def _save_pending_to_db(key, entry: dict):
+    try:
+        from database import save_pending_report
+        save_pending_report(
+            'mou', _key_to_str(key),
+            entry.get('data', {}),
+            entry.get('photos', []),
+            entry.get('last_photo_time', 0),
+            entry.get('created', time.time()),
+        )
+    except Exception as e:
+        print(f"⚠️ MOU PENDING DB 저장 실패: {e}")
+
+
+def _delete_pending_from_db(key):
+    try:
+        from database import delete_pending_report
+        delete_pending_report('mou', _key_to_str(key))
+    except Exception:
+        pass
+
+
+def _save_pending_photos_to_db(key, photos: list):
+    try:
+        from database import save_pending_photos_db
+        save_pending_photos_db('mou', _key_to_str(key), photos, time.time())
+    except Exception:
+        pass
+
+
+def restore_pending_from_db():
+    try:
+        from database import load_pending_reports, load_pending_photos_db
+        for r in load_pending_reports('mou'):
+            chat_id_str, topic_str = r['pending_key'].split(':')
+            key = (int(chat_id_str), int(topic_str))
+            MOU_PENDING_REPORTS[key] = {
+                'data': r['data'], 'photos': r['photos'], 'saved': False,
+                'last_photo_time': r['last_photo_time'], 'created': r['created'],
+            }
+        for r in load_pending_photos_db('mou'):
+            chat_id_str, topic_str = r['pending_key'].split(':')
+            key = (int(chat_id_str), int(topic_str))
+            MOU_PENDING_PHOTOS[key] = {
+                'photos': r['photos'], 'created': r['created'],
+            }
+        if MOU_PENDING_REPORTS or MOU_PENDING_PHOTOS:
+            print(f"✅ MOU PENDING 복원: 보고서 {len(MOU_PENDING_REPORTS)}건, 사진 {len(MOU_PENDING_PHOTOS)}건")
+    except Exception as e:
+        print(f"⚠️ MOU PENDING 복원 실패: {e}")
+
+
 def _cleanup_mou_photos():
     now = time.time()
     expired = [k for k, v in list(MOU_PENDING_PHOTOS.items())
                if now - v.get('created', 0) > MOU_PHOTOS_TTL]
     for k in expired:
         MOU_PENDING_PHOTOS.pop(k, None)
+        try:
+            from database import delete_pending_photos_db
+            delete_pending_photos_db('mou', _key_to_str(k))
+        except Exception:
+            pass
 
 
 async def _send_to_recipient(context, **kwargs):
@@ -301,9 +364,16 @@ async def _send_to_recipient(context, **kwargs):
 
 
 async def _finalize_mou(context, data: dict, photos: list):
+    """다중 사진(최대 5장) 지원 finalize"""
+    from handlers.report_base import (
+        download_photos_batch, send_to_recipient as base_send,
+        notify_admin as base_notify,
+    )
     try:
-        if photos:
-            data['사진링크'] = photos[0]
+        # 사진 URL을 사진1~5링크로 분배
+        for i in range(1, 6):
+            data[f'사진{i}링크'] = photos[i-1] if i <= len(photos) else ''
+
         loop = asyncio.get_running_loop()
 
         # 시트 저장
@@ -313,29 +383,23 @@ async def _finalize_mou(context, data: dict, photos: list):
             sheet_ok = False
             print(f"❌ MOU 시트 저장 예외: {e}")
 
-        # 사진 다운로드
-        tmp_photo = None
-        photo_failed = False
-        if data.get('사진링크'):
-            try:
-                tmp_photo = await loop.run_in_executor(None, _download_mou_photo, data['사진링크'])
-                photo_failed = (tmp_photo is None)
-            except Exception as e:
-                photo_failed = True
-                print(f"❌ MOU 사진 다운로드 예외: {e}")
+        # 다중 사진 다운로드
+        tmp_files, photo_failed = await download_photos_batch(photos[:5])
 
         # Word 생성
         now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
         output_path = f"/tmp/mou_{now_str}.docx"
         try:
-            docx_ok = await loop.run_in_executor(None, generate_mou_docx, data, tmp_photo, output_path)
+            docx_ok = await loop.run_in_executor(
+                None, generate_mou_docx, data, tmp_files, output_path
+            )
         except Exception as e:
             docx_ok = False
             print(f"❌ MOU Word 생성 예외: {e}")
 
-        if tmp_photo:
+        for tmp in tmp_files:
             try:
-                os.remove(tmp_photo)
+                os.remove(tmp)
             except Exception:
                 pass
 
@@ -347,17 +411,27 @@ async def _finalize_mou(context, data: dict, photos: list):
             f"🏢 {data.get('기관명')}\n"
             f"📅 {data.get('협약일시')}"
         )
+        if photos:
+            summary += f"\n📸 사진 {len(photos)}장 첨부"
         warnings = []
         if not sheet_ok:
             warnings.append("스프레드시트 저장 실패 — 수동 저장 필요")
         if not docx_ok:
             warnings.append("Word 파일 생성 실패 — 텍스트만 저장됨")
-        if photo_failed:
-            warnings.append("사진 다운로드 실패 (파일 링크 만료 가능)")
+        if photo_failed > 0:
+            warnings.append(f"사진 {photo_failed}장 다운로드 실패 (파일 링크 만료 가능)")
         if warnings:
             summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
 
-        await _send_to_recipient(context, text=summary)
+        await base_send(context.bot, MOU_RECIPIENT_ID, text=summary)
+
+        # 중복 제출 기록
+        try:
+            from database import record_submission
+            sub_hash = f"{data.get('지부', '')}|{data.get('협약명', '')}"
+            record_submission('mou', sub_hash, summary[:200])
+        except Exception:
+            pass
 
         # Word 파일 전송
         if docx_ok and os.path.exists(output_path):
@@ -367,8 +441,9 @@ async def _finalize_mou(context, data: dict, photos: list):
             ).replace(' ', '_').replace('/', '-')
             try:
                 with open(output_path, 'rb') as f:
-                    await _send_to_recipient(
-                        context, document=f, filename=filename,
+                    await base_send(
+                        context.bot, MOU_RECIPIENT_ID,
+                        document=f, filename=filename,
                         caption="📄 MOU 체결보고서 Word 파일"
                     )
             finally:
@@ -378,8 +453,8 @@ async def _finalize_mou(context, data: dict, photos: list):
                     pass
     except Exception as e:
         import traceback
-        await _notify_admin(
-            context,
+        await base_notify(
+            context.bot,
             f"❌ MOU 처리 중 예외 발생: {e}\n"
             f"데이터: {str(data)[:300]}\n"
             f"{traceback.format_exc()[:1000]}"
@@ -404,13 +479,62 @@ async def _flush_mou_report(context, key):
     if not entry or entry.get('saved'):
         return
     entry['saved'] = True
+    _delete_pending_from_db(key)
     await _finalize_mou(context, entry['data'], entry['photos'])
 
 
 # ── 메인 핸들러 ───────────────────────────────────────────────────────────────
 
+async def _process_mou_album(context, media_group_id: str):
+    """앨범 사진 모두 도착 대기 후 finalize"""
+    await asyncio.sleep(3)
+    cache = MOU_MEDIA_CACHE.get(media_group_id)
+    if not cache or cache.get('processed'):
+        return
+    MOU_MEDIA_CACHE[media_group_id]['processed'] = True
+    caption = cache.get('caption', '')
+    photos = cache.get('photos', [])[:5]
+    key = cache.get('key')
+
+    now = time.time()
+    expired = [k for k, v in list(MOU_MEDIA_CACHE.items())
+               if now - v.get('created', 0) > 300]
+    for k in expired:
+        MOU_MEDIA_CACHE.pop(k, None)
+
+    if key and key in MOU_PENDING_REPORTS and not MOU_PENDING_REPORTS[key].get('saved'):
+        pending = MOU_PENDING_REPORTS.pop(key)
+        pending['saved'] = True
+        await _finalize_mou(context, pending['data'], pending['photos'] + photos)
+        return
+
+    if caption and _has_mou_keywords(caption):
+        data = parse_mou_caption(caption)
+        if not data:
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ MOU 보고서 파싱 실패\n캡션:\n{caption[:300]}"
+            )
+            return
+        if '_missing' in data:
+            hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+            await _send_to_recipient(
+                context,
+                text=f"⚠️ MOU 필수 항목 누락:\n  - {hints}\n\n캡션:\n{caption[:300]}"
+            )
+            return
+        await _finalize_mou(context, data, photos)
+        return
+
+    if key:
+        _cleanup_mou_photos()
+        if key not in MOU_PENDING_PHOTOS:
+            MOU_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
+        MOU_PENDING_PHOTOS[key]['photos'].extend(photos)
+
+
 async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """사진 수신 처리 — 캡션 있음/없음 모두 대응 (케이스 A~G)"""
+    """사진 수신 처리 — 단일/앨범, 캡션 있음/없음 모두 대응 (케이스 A~G)"""
     if not update.message or not update.message.photo:
         return
     if update.effective_chat.id != MOU_GROUP_ID:
@@ -419,12 +543,26 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     caption = update.message.caption or ''
+    media_group_id = update.message.media_group_id
     photo = update.message.photo[-1]
     photo_file = await context.bot.get_file(photo.file_id)
     photo_url = photo_file.file_path
     key = _mou_key(update.effective_chat.id, update.message.message_thread_id)
 
-    # 케이스 A/B: 사진+캡션 → 즉시 처리
+    # 앨범 처리
+    if media_group_id:
+        if media_group_id not in MOU_MEDIA_CACHE:
+            MOU_MEDIA_CACHE[media_group_id] = {
+                'caption': '', 'photos': [], 'key': key,
+                'processed': False, 'created': time.time()
+            }
+            asyncio.create_task(_process_mou_album(context, media_group_id))
+        MOU_MEDIA_CACHE[media_group_id]['photos'].append(photo_url)
+        if caption:
+            MOU_MEDIA_CACHE[media_group_id]['caption'] = caption
+        return
+
+    # 케이스 A/B: 단일 사진+캡션 → 즉시 처리
     if caption and _has_mou_keywords(caption):
         data = parse_mou_caption(caption)
         if not data:
@@ -447,6 +585,7 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if key in MOU_PENDING_REPORTS and not MOU_PENDING_REPORTS[key].get('saved'):
         MOU_PENDING_REPORTS[key]['photos'].append(photo_url)
         MOU_PENDING_REPORTS[key]['last_photo_time'] = time.time()
+        _save_pending_to_db(key, MOU_PENDING_REPORTS[key])
         return
 
     # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 보관
@@ -454,6 +593,7 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if key not in MOU_PENDING_PHOTOS:
         MOU_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
     MOU_PENDING_PHOTOS[key]['photos'].append(photo_url)
+    _save_pending_photos_to_db(key, MOU_PENDING_PHOTOS[key]['photos'])
 
 
 async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -482,9 +622,15 @@ async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pre_photos: list = []
     if key in MOU_PENDING_PHOTOS:
         pre_photos = MOU_PENDING_PHOTOS.pop(key)['photos']
+        try:
+            from database import delete_pending_photos_db
+            delete_pending_photos_db('mou', _key_to_str(key))
+        except Exception:
+            pass
     MOU_PENDING_REPORTS[key] = {
         'data': data, 'photos': pre_photos, 'saved': False,
         'last_photo_time': time.time() if pre_photos else 0,
         'created': time.time(),
     }
+    _save_pending_to_db(key, MOU_PENDING_REPORTS[key])
     asyncio.create_task(_flush_mou_report(context, key))

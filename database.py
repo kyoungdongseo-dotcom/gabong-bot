@@ -99,6 +99,29 @@ def init_db():
         ON recent_submissions(report_type, submitted_at)
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS report_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type TEXT NOT NULL,
+            user_id     INTEGER,
+            chat_id     INTEGER,
+            topic_id    INTEGER,
+            message_id  INTEGER,
+            stage       TEXT NOT NULL,
+            status      TEXT NOT NULL,
+            detail      TEXT,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_report_log_user
+        ON report_log(user_id, created_at)
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_report_log_type_stage
+        ON report_log(report_type, stage, status)
+    """)
+
     conn.commit()
     conn.close()
     print("✅ DB 초기화 완료")
@@ -329,3 +352,60 @@ def cleanup_recent_submissions(max_age_sec: float = 86400):
     conn.execute("DELETE FROM recent_submissions WHERE submitted_at < ?", (threshold,))
     conn.commit()
     conn.close()
+
+
+# ── 보고서 처리 단계 로그 ─────────────────────────────────────────────────────
+
+def log_report_stage(report_type: str, stage: str, status: str,
+                     user_id: int = None, chat_id: int = None,
+                     topic_id: int = None, message_id: int = None,
+                     detail: str = ''):
+    """모든 보고서 처리 단계 추적용. 절대 throw 안 함 (best-effort)."""
+    try:
+        conn = get_conn()
+        conn.execute("""
+            INSERT INTO report_log
+            (report_type, user_id, chat_id, topic_id, message_id, stage, status, detail)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (report_type, user_id, chat_id, topic_id, message_id, stage, status, detail[:500]))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ report_log 기록 실패: {e}")
+
+
+def get_report_log_stats(report_type: str = None, hours: int = 24) -> dict:
+    """최근 N시간 단계별/상태별 통계"""
+    try:
+        conn = get_conn()
+        threshold = (datetime.now().timestamp() - hours * 3600)
+        threshold_str = datetime.fromtimestamp(threshold).strftime('%Y-%m-%d %H:%M:%S')
+        query = """
+            SELECT stage, status, COUNT(*) as cnt FROM report_log
+            WHERE created_at >= ?
+        """
+        params = [threshold_str]
+        if report_type:
+            query += " AND report_type=?"
+            params.append(report_type)
+        query += " GROUP BY stage, status"
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
+        result = {}
+        for r in rows:
+            result.setdefault(r['stage'], {})[r['status']] = r['cnt']
+        return result
+    except Exception:
+        return {}
+
+
+def cleanup_report_log(max_age_days: int = 30):
+    try:
+        conn = get_conn()
+        threshold = (datetime.now().timestamp() - max_age_days * 86400)
+        threshold_str = datetime.fromtimestamp(threshold).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute("DELETE FROM report_log WHERE created_at < ?", (threshold_str,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

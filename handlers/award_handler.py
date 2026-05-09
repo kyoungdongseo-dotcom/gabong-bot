@@ -303,12 +303,15 @@ def generate_docx(data: dict, photo_paths, output_path: str) -> bool:
 
 # ── 사진 대기 관리 ─────────────────────────────────────────────────────────────
 
-def _award_key(chat_id: int, thread_id):
-    return (chat_id, thread_id or 0)
+def _award_key(chat_id: int, thread_id, user_id: int = 0):
+    """동시 제출 충돌 방지: chat+topic+user 조합"""
+    return (chat_id, thread_id or 0, user_id or 0)
 
 
 def _key_to_str(key) -> str:
-    return f"{key[0]}:{key[1]}"
+    if len(key) == 3:
+        return f"{key[0]}:{key[1]}:{key[2]}"
+    return f"{key[0]}:{key[1]}:0"
 
 
 def _save_pending_to_db(key, entry: dict):
@@ -341,23 +344,38 @@ def _save_pending_photos_to_db(key, photos: list):
         pass
 
 
+def _parse_key_str(s: str):
+    """저장 키 문자열을 튜플로. 구버전(chat:topic)도 호환."""
+    parts = s.split(':')
+    if len(parts) == 3:
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    if len(parts) == 2:
+        return (int(parts[0]), int(parts[1]), 0)
+    raise ValueError(f"bad key: {s}")
+
+
 def restore_pending_from_db():
     """봇 시작 시 호출 — DB에서 PENDING 상태 복원"""
     try:
         from database import load_pending_reports, load_pending_photos_db
         for r in load_pending_reports('award'):
-            chat_id_str, topic_str = r['pending_key'].split(':')
-            key = (int(chat_id_str), int(topic_str))
-            AWARD_PENDING_REPORTS[key] = {
-                'data': r['data'], 'photos': r['photos'], 'saved': False,
-                'last_photo_time': r['last_photo_time'], 'created': r['created'],
-            }
+            try:
+                key = _parse_key_str(r['pending_key'])
+                AWARD_PENDING_REPORTS[key] = {
+                    'data': r['data'], 'photos': r['photos'], 'saved': False,
+                    'last_photo_time': r['last_photo_time'], 'created': r['created'],
+                    'origin': r['data'].get('_origin', {}),
+                }
+            except Exception:
+                continue
         for r in load_pending_photos_db('award'):
-            chat_id_str, topic_str = r['pending_key'].split(':')
-            key = (int(chat_id_str), int(topic_str))
-            AWARD_PENDING_PHOTOS[key] = {
-                'photos': r['photos'], 'created': r['created'],
-            }
+            try:
+                key = _parse_key_str(r['pending_key'])
+                AWARD_PENDING_PHOTOS[key] = {
+                    'photos': r['photos'], 'created': r['created'],
+                }
+            except Exception:
+                continue
         if AWARD_PENDING_REPORTS or AWARD_PENDING_PHOTOS:
             print(f"✅ 수상보고서 PENDING 복원: 보고서 {len(AWARD_PENDING_REPORTS)}건, 사진 {len(AWARD_PENDING_PHOTOS)}건")
     except Exception as e:
@@ -377,12 +395,16 @@ def _cleanup_award_photos():
             pass
 
 
-async def _finalize_award(context, data: dict, photos: list):
-    """다중 사진(최대 5장) 지원 finalize"""
+async def _finalize_award(context, data: dict, photos: list, *, origin: dict = None):
+    """다중 사진(최대 5장) + 단계 로깅 + 재시도 + 보고자 결과 reply"""
     from handlers.report_base import (
         download_photos_batch, send_to_recipient as base_send,
-        notify_admin as base_notify,
+        notify_admin as base_notify, with_sheet_retry, reply_to_origin,
     )
+    from database import log_report_stage
+    if origin is None:
+        origin = data.get('_origin', {}) or {}
+    user_id = origin.get('user_id')
     try:
         # 사진 URL을 사진1~5링크로 분배
         for i in range(1, 6):
@@ -390,15 +412,25 @@ async def _finalize_award(context, data: dict, photos: list):
 
         loop = asyncio.get_running_loop()
 
-        # 시트 저장
+        # 시트 저장 (3회 재시도)
         try:
-            sheet_ok = await loop.run_in_executor(None, save_to_sheet, data)
+            sheet_ok = await loop.run_in_executor(None, with_sheet_retry, save_to_sheet, data, 3)
         except Exception as e:
             sheet_ok = False
             print(f"❌ 수상 시트 저장 예외: {e}")
+        log_report_stage('award', 'sheet_saved', 'ok' if sheet_ok else 'fail',
+                         user_id=user_id, chat_id=origin.get('chat_id'),
+                         topic_id=origin.get('message_thread_id'),
+                         message_id=origin.get('message_id'))
 
-        # 다중 사진 다운로드
+        # 다중 사진 다운로드 (3회 재시도, 5초 간격)
         tmp_files, photo_failed = await download_photos_batch(photos[:5])
+        log_report_stage(
+            'award', 'photos_downloaded',
+            'ok' if photo_failed == 0 else ('partial' if tmp_files else 'fail'),
+            user_id=user_id,
+            detail=f"ok={len(tmp_files)} fail={photo_failed}"
+        )
 
         # Word 생성
         now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
@@ -410,6 +442,8 @@ async def _finalize_award(context, data: dict, photos: list):
         except Exception as e:
             docx_ok = False
             print(f"❌ 수상 Word 생성 예외: {e}")
+        log_report_stage('award', 'docx_generated',
+                         'ok' if docx_ok else 'fail', user_id=user_id)
 
         for tmp in tmp_files:
             try:
@@ -436,7 +470,9 @@ async def _finalize_award(context, data: dict, photos: list):
         if warnings:
             summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
 
-        await base_send(context.bot, AWARD_RECIPIENT_ID, text=summary)
+        dm_ok = await base_send(context.bot, AWARD_RECIPIENT_ID, text=summary)
+        log_report_stage('award', 'recipient_dm_sent',
+                         'ok' if dm_ok else 'fail', user_id=user_id)
 
         # 중복 제출 기록
         try:
@@ -464,13 +500,42 @@ async def _finalize_award(context, data: dict, photos: list):
                     os.remove(output_path)
                 except Exception:
                     pass
+
+        # 보고자 최종 결과 reply
+        result_lines = []
+        if sheet_ok and docx_ok and photo_failed == 0 and dm_ok:
+            result_lines.append("✅ 모든 처리 완료")
+        else:
+            result_lines.append("⚠️ 처리 부분 완료")
+            if sheet_ok:
+                result_lines.append("  ✅ 시트 저장")
+            else:
+                result_lines.append("  ❌ 시트 저장 실패")
+            if docx_ok:
+                result_lines.append("  ✅ Word 파일 생성")
+            else:
+                result_lines.append("  ❌ Word 파일 생성 실패")
+            if photo_failed > 0:
+                result_lines.append(
+                    f"  ⚠️ 사진 {photo_failed}장 다운로드 실패 — 다시 보내주세요"
+                )
+            if not dm_ok:
+                result_lines.append("  ⚠️ 서무 DM 전송 실패 — 관리자에게 알림")
+        await reply_to_origin(context.bot, origin, "\n".join(result_lines))
+        log_report_stage('award', 'reporter_ack_sent', 'ok', user_id=user_id)
     except Exception as e:
         import traceback
+        log_report_stage('award', 'finalize', 'fail', user_id=user_id,
+                         detail=str(e)[:200])
         await base_notify(
             context.bot,
             f"❌ 수상보고서 처리 중 예외 발생: {e}\n"
             f"데이터: {str(data)[:300]}\n"
             f"{traceback.format_exc()[:1000]}"
+        )
+        await reply_to_origin(
+            context.bot, origin,
+            f"❌ 처리 중 오류 발생: {str(e)[:200]}\n관리자에게 알림됨"
         )
 
 
@@ -493,7 +558,8 @@ async def _flush_award_report(context, key):
         return
     entry['saved'] = True
     _delete_pending_from_db(key)
-    await _finalize_award(context, entry['data'], entry['photos'])
+    await _finalize_award(context, entry['data'], entry['photos'],
+                          origin=entry.get('origin'))
 
 
 # ── 메인 핸들러 ───────────────────────────────────────────────────────────────
@@ -513,46 +579,66 @@ async def _process_award_album(context, media_group_id: str):
     caption = cache.get('caption', '')
     photos = cache.get('photos', [])[:5]
     key = cache.get('key')
+    origin = cache.get('origin', {})
 
-    # TTL 만료된 캐시 정리
+    from handlers.report_base import reply_to_origin
+    from database import log_report_stage
+    user_id = origin.get('user_id')
+
     now = time.time()
     expired = [k for k, v in list(AWARD_MEDIA_CACHE.items())
                if now - v.get('created', 0) > 300]
     for k in expired:
         AWARD_MEDIA_CACHE.pop(k, None)
 
-    # 텍스트 보고서가 이미 PENDING에 있으면 사진만 연결
     if key and key in AWARD_PENDING_REPORTS and not AWARD_PENDING_REPORTS[key].get('saved'):
         pending = AWARD_PENDING_REPORTS.pop(key)
         pending['saved'] = True
-        await _finalize_award(context, pending['data'], pending['photos'] + photos)
+        _delete_pending_from_db(key)
+        await _finalize_award(context, pending['data'],
+                              pending['photos'] + photos,
+                              origin=pending.get('origin', origin))
         return
 
-    # 캡션에 보고서 있는 경우
     if caption and '수상' in caption and '보고' in caption:
+        log_report_stage('award', 'received', 'ok', user_id=user_id,
+                         chat_id=origin.get('chat_id'),
+                         topic_id=origin.get('message_thread_id'),
+                         message_id=origin.get('message_id'),
+                         detail=f"album {len(photos)}장")
         data = parse_award_caption(caption)
         if not data:
-            await _send_to_recipient(
-                context,
-                text=f"⚠️ 수상보고서 파싱 실패\n캡션:\n{caption[:300]}"
+            log_report_stage('award', 'parsed', 'fail', user_id=user_id)
+            await reply_to_origin(
+                context.bot, origin,
+                "⚠️ 수상보고서 파싱 실패"
             )
             return
         if '_missing' in data:
+            log_report_stage('award', 'parsed', 'fail', user_id=user_id,
+                             detail=f"missing: {','.join(data['_missing'])}")
             hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
-            await _send_to_recipient(
-                context,
-                text=f"⚠️ 수상보고서 필수 항목 누락:\n  - {hints}\n\n캡션:\n{caption[:300]}"
+            await reply_to_origin(
+                context.bot, origin,
+                f"⚠️ 필수 항목 누락:\n  - {hints}"
             )
             return
-        await _finalize_award(context, data, photos)
+        log_report_stage('award', 'parsed', 'ok', user_id=user_id)
+        data['_origin'] = origin
+        await reply_to_origin(
+            context.bot, origin,
+            f"✅ 수상보고서 접수 (사진 {len(photos)}장) - 처리 중"
+        )
+        await _finalize_award(context, data, photos, origin=origin)
         return
 
-    # 캡션 없음 → PENDING_PHOTOS에 보관 (텍스트 나중에)
+    # 캡션 없음 → PENDING_PHOTOS에 보관
     if key:
         _cleanup_award_photos()
         if key not in AWARD_PENDING_PHOTOS:
             AWARD_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
         AWARD_PENDING_PHOTOS[key]['photos'].extend(photos)
+        _save_pending_photos_to_db(key, AWARD_PENDING_PHOTOS[key]['photos'])
 
 
 async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -564,18 +650,24 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.message.message_thread_id != AWARD_TOPIC_ID:
         return
 
+    from handlers.report_base import make_origin, reply_to_origin
+    from database import log_report_stage
+    user_id = update.effective_user.id
+    origin = make_origin(update)
+
     caption = update.message.caption or ''
     media_group_id = update.message.media_group_id
     photo = update.message.photo[-1]
     photo_file = await context.bot.get_file(photo.file_id)
     photo_url = photo_file.file_path
-    key = _award_key(update.effective_chat.id, update.message.message_thread_id)
+    key = _award_key(update.effective_chat.id,
+                     update.message.message_thread_id, user_id)
 
     # 앨범(여러 장) 처리
     if media_group_id:
         if media_group_id not in AWARD_MEDIA_CACHE:
             AWARD_MEDIA_CACHE[media_group_id] = {
-                'caption': '', 'photos': [], 'key': key,
+                'caption': '', 'photos': [], 'key': key, 'origin': origin,
                 'processed': False, 'created': time.time()
             }
             asyncio.create_task(_process_award_album(context, media_group_id))
@@ -586,21 +678,32 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # 케이스 A/B: 단일 사진+캡션 → 즉시 처리
     if caption and '수상' in caption and '보고' in caption:
+        log_report_stage('award', 'received', 'ok', user_id=user_id,
+                         chat_id=origin['chat_id'],
+                         topic_id=origin['message_thread_id'],
+                         message_id=origin['message_id'],
+                         detail=caption[:120])
         data = parse_award_caption(caption)
         if not data:
-            await _send_to_recipient(
-                context,
-                text=f"⚠️ 수상보고서 파싱 실패 (수상+보고 키워드 필요)\n캡션:\n{caption[:300]}"
+            log_report_stage('award', 'parsed', 'fail', user_id=user_id)
+            await reply_to_origin(
+                context.bot, origin,
+                "⚠️ 수상보고서 파싱 실패 (수상+보고 키워드 필요)"
             )
             return
         if '_missing' in data:
+            log_report_stage('award', 'parsed', 'fail', user_id=user_id,
+                             detail=f"missing: {','.join(data['_missing'])}")
             hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
-            await _send_to_recipient(
-                context,
-                text=f"⚠️ 수상보고서 필수 항목 누락:\n  - {hints}\n\n캡션:\n{caption[:300]}"
+            await reply_to_origin(
+                context.bot, origin,
+                f"⚠️ 필수 항목 누락:\n  - {hints}"
             )
             return
-        await _finalize_award(context, data, [photo_url])
+        log_report_stage('award', 'parsed', 'ok', user_id=user_id)
+        data['_origin'] = origin
+        await reply_to_origin(context.bot, origin, "✅ 수상보고서 접수 - 처리 중")
+        await _finalize_award(context, data, [photo_url], origin=origin)
         return
 
     # 케이스 C/D/G: 텍스트 등록 후 사진 도착
@@ -629,17 +732,44 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if '수상' not in text or '보고' not in text:
         return
+
+    from handlers.report_base import make_origin, reply_to_origin
+    from database import log_report_stage
+    user_id = update.effective_user.id
+    origin = make_origin(update)
+
+    log_report_stage('award', 'received', 'ok',
+                     user_id=user_id, chat_id=origin.get('chat_id'),
+                     topic_id=origin.get('message_thread_id'),
+                     message_id=origin.get('message_id'),
+                     detail=text[:120])
+
     data = parse_award_caption(text)
     if not data:
-        return
-    if '_missing' in data:
-        hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
-        await _send_to_recipient(
-            context,
-            text=f"⚠️ 수상보고서 필수 항목 누락:\n  - {hints}\n\n텍스트:\n{text[:300]}"
+        log_report_stage('award', 'parsed', 'fail',
+                         user_id=user_id, detail='parse returned None')
+        await reply_to_origin(
+            context.bot, origin,
+            "⚠️ 수상보고서로 인식하지 못했습니다.\n"
+            "첫 줄 형식: '지역 지부 수상보고' / 키워드 '수상'+'보고' 필요"
         )
         return
-    key = _award_key(update.effective_chat.id, update.message.message_thread_id)
+    if '_missing' in data:
+        log_report_stage('award', 'parsed', 'fail',
+                         user_id=user_id,
+                         detail=f"missing: {','.join(data['_missing'])}")
+        hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
+        await reply_to_origin(
+            context.bot, origin,
+            f"⚠️ 필수 항목 누락:\n  - {hints}"
+        )
+        return
+
+    log_report_stage('award', 'parsed', 'ok', user_id=user_id,
+                     detail=f"{data.get('지부','')} | {data.get('수상명','')}")
+
+    key = _award_key(update.effective_chat.id,
+                     update.message.message_thread_id, user_id)
     # 케이스 F/G: 먼저 도착한 사진 연결
     pre_photos: list = []
     if key in AWARD_PENDING_PHOTOS:
@@ -649,10 +779,22 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             delete_pending_photos_db('award', _key_to_str(key))
         except Exception:
             pass
+
+    data['_origin'] = origin   # 영속화 시 같이 저장됨
+
     AWARD_PENDING_REPORTS[key] = {
         'data': data, 'photos': pre_photos, 'saved': False,
         'last_photo_time': time.time() if pre_photos else 0,
         'created': time.time(),
+        'origin': origin,
     }
     _save_pending_to_db(key, AWARD_PENDING_REPORTS[key])
+
+    # 보고자 즉시 ack
+    photo_msg = f" (이미 받은 사진 {len(pre_photos)}장 포함)" if pre_photos else ""
+    await reply_to_origin(
+        context.bot, origin,
+        f"✅ 수상보고서 접수{photo_msg}\n사진 대기 중 (60s+ 추가 5분 자동 연장)"
+    )
+
     asyncio.create_task(_flush_award_report(context, key))

@@ -47,37 +47,113 @@ def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
     return build('sheets', 'v4', credentials=creds)
 
-async def finalize_report(context, report: dict, photos: list, source: str = ""):
-    """보고서 최종 저장 + Word 전송"""
+async def finalize_report(context, report: dict, photos: list, source: str = "",
+                          origin: dict = None):
+    """봉사보고서 최종 저장 + Word 전송 + 단계 로깅 + 보고자 reply"""
+    from handlers.report_base import (
+        with_sheet_retry, send_to_recipient as base_send,
+        notify_admin as base_notify, reply_to_origin,
+    )
+    from database import log_report_stage, record_submission
+    if origin is None:
+        origin = report.get('_origin', {}) or {}
+    user_id = origin.get('user_id')
     for i, url in enumerate(photos[:5], 1):
         report[f'사진{i}링크'] = url
+
+    sheet_ok = False
+    docx_ok = False
+    dm_ok = False
     try:
         service = get_sheet_service()
         spreadsheet_id = config.get('spreadsheet_id')
-        success = save_report_to_sheet(report, service, spreadsheet_id)
-        if success:
-            photo_text = f"📸 사진 {len(photos)}장 링크 저장 완료" if photos else "📸 사진 없음"
-            await context.bot.send_message(
-                chat_id=DOCX_RECIPIENT_ID,
-                text=(
-                    f"✅ 봉사보고서 자동 저장 완료!\n"
-                    f"📌 {report.get('지파명')} {report.get('교회명')}\n"
-                    f"📋 {report.get('활동명')}\n"
-                    f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                    f"{photo_text}\n"
-                    f"📎 출처: {source}"
-                )
-            )
-            await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
-    except Exception as e:
-        print(f"❌ 보고서 저장 오류: {e}")
 
-async def flush_pending_report(context, chat_id: int):
+        # 시트 저장 (3회 재시도)
+        loop = asyncio.get_running_loop()
+        try:
+            def _save():
+                return save_report_to_sheet(report, service, spreadsheet_id)
+            sheet_ok = await loop.run_in_executor(None, with_sheet_retry, _save, None, 3)
+        except Exception as e:
+            print(f"⚠️ 봉사 시트 저장 예외: {e}")
+        log_report_stage('service', 'sheet_saved',
+                         'ok' if sheet_ok else 'fail',
+                         user_id=user_id, chat_id=origin.get('chat_id'),
+                         topic_id=origin.get('message_thread_id'),
+                         message_id=origin.get('message_id'))
+
+        # 서무 DM (요약)
+        photo_text = f"📸 사진 {len(photos)}장 링크 저장 완료" if photos else "📸 사진 없음"
+        summary_dm = (
+            f"{'✅' if sheet_ok else '⚠️'} 봉사보고서 처리\n"
+            f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+            f"📋 {report.get('활동명')}\n"
+            f"👥 총 봉사자: {report.get('총봉사자')}명\n"
+            f"{photo_text}\n"
+            f"📎 출처: {source}"
+        )
+        if not sheet_ok:
+            summary_dm += "\n⚠️ 스프레드시트 저장 실패 - 수동 저장 필요"
+        dm_ok = await base_send(context.bot, DOCX_RECIPIENT_ID, text=summary_dm)
+        log_report_stage('service', 'recipient_dm_sent',
+                         'ok' if dm_ok else 'fail', user_id=user_id)
+
+        # Word 생성 + 전송
+        try:
+            docx_ok = await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
+        except Exception as e:
+            print(f"⚠️ 봉사 Word 전송 예외: {e}")
+        log_report_stage('service', 'docx_generated',
+                         'ok' if docx_ok else 'fail', user_id=user_id)
+
+        # 중복 제출 기록
+        try:
+            sub_hash = f"{report.get('지파명', '')}|{report.get('교회명', '')}|{report.get('활동명', '')}"
+            record_submission('service', sub_hash, summary_dm[:200])
+        except Exception:
+            pass
+
+        # 보고자 reply
+        result_lines = []
+        if sheet_ok and docx_ok and dm_ok:
+            result_lines.append("✅ 봉사보고서 모든 처리 완료")
+            if photos:
+                result_lines.append(f"📸 사진 {len(photos)}장 첨부됨")
+        else:
+            result_lines.append("⚠️ 봉사보고서 처리 부분 완료")
+            if sheet_ok:
+                result_lines.append("  ✅ 시트 저장")
+            else:
+                result_lines.append("  ❌ 시트 저장 실패")
+            if docx_ok:
+                result_lines.append("  ✅ Word 파일 생성")
+            else:
+                result_lines.append("  ❌ Word 파일 생성 실패")
+            if not dm_ok:
+                result_lines.append("  ⚠️ 서무 DM 전송 실패 - 관리자에게 알림")
+        await reply_to_origin(context.bot, origin, "\n".join(result_lines))
+        log_report_stage('service', 'reporter_ack_sent', 'ok', user_id=user_id)
+    except Exception as e:
+        import traceback
+        print(f"❌ 보고서 저장 오류: {e}")
+        log_report_stage('service', 'finalize', 'fail', user_id=user_id,
+                         detail=str(e)[:200])
+        await base_notify(
+            context.bot,
+            f"❌ 봉사보고서 처리 중 예외 발생: {e}\n"
+            f"{traceback.format_exc()[:1000]}"
+        )
+        await reply_to_origin(
+            context.bot, origin,
+            f"❌ 처리 중 오류 발생: {str(e)[:200]}\n관리자에게 알림됨"
+        )
+
+async def flush_pending_report(context, key):
     """60초 기다린 후 저장. 사진이 계속 오면 5초씩 연장 (최대 5분)"""
     start = time.time()
     await asyncio.sleep(60)
     while True:
-        entry = PENDING_REPORTS.get(chat_id)
+        entry = PENDING_REPORTS.get(key)
         if not entry or entry.get('saved'):
             return
         last_photo = entry.get('last_photo_time', 0)
@@ -86,13 +162,15 @@ async def flush_pending_report(context, chat_id: int):
             await asyncio.sleep(5)
             continue
         break
-    entry = PENDING_REPORTS.pop(chat_id, None)
+    entry = PENDING_REPORTS.pop(key, None)
     if not entry or entry.get('saved'):
         return
     entry['saved'] = True
     photo_count = len(entry['photos'])
     print(f"⏳ 사진 대기 완료 → 저장 진행 (사진 {photo_count}장)")
-    await finalize_report(context, entry['report'], entry['photos'], source=f"delayed_{photo_count}photos")
+    await finalize_report(context, entry['report'], entry['photos'],
+                          source=f"delayed_{photo_count}photos",
+                          origin=entry.get('origin'))
 
 async def process_media_group(context, media_group_id: str):
     """앨범 사진 수집 완료 후 처리"""
@@ -104,13 +182,23 @@ async def process_media_group(context, media_group_id: str):
     caption = cache.get('caption', '')
     photos = cache.get('photos', [])[:5]
     chat_id = cache.get('chat_id')
+    user_id = cache.get('user_id')
+    origin = cache.get('origin', {})
+    pending_key = (chat_id, user_id) if chat_id and user_id else chat_id
+
+    from handlers.report_base import reply_to_origin
 
     # 텍스트 보고서가 이미 PENDING에 있으면 사진만 연결
-    if chat_id and chat_id in PENDING_REPORTS:
-        pending = PENDING_REPORTS.pop(chat_id)
+    if pending_key in PENDING_REPORTS:
+        pending = PENDING_REPORTS.pop(pending_key)
         if not pending.get('saved'):
             pending['saved'] = True
-            await finalize_report(context, pending['report'], photos, source="album_linked")
+            await finalize_report(
+                context, pending['report'],
+                pending.get('photos', []) + photos,
+                source="album_linked",
+                origin=pending.get('origin', origin),
+            )
         cleanup_media_cache()
         return
 
@@ -118,7 +206,13 @@ async def process_media_group(context, media_group_id: str):
     if caption:
         report = parse_report(caption)
         if report:
-            await finalize_report(context, report, photos, source="album_caption")
+            report['_origin'] = origin
+            await reply_to_origin(
+                context.bot, origin,
+                f"✅ 봉사보고서 접수 (사진 {len(photos)}장) - 처리 중"
+            )
+            await finalize_report(context, report, photos,
+                                  source="album_caption", origin=origin)
 
     cleanup_media_cache()
 
@@ -135,6 +229,11 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
     if thread_id in EXCLUDED_TOPICS:
         return
 
+    from handlers.report_base import make_origin, reply_to_origin
+    user_id = update.effective_user.id
+    origin = make_origin(update)
+    pending_key = (chat_id, user_id)
+
     caption = update.message.caption or ""
     media_group_id = update.message.media_group_id
 
@@ -148,6 +247,8 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                 'caption': '',
                 'photos': [],
                 'chat_id': chat_id,
+                'user_id': user_id,
+                'origin': origin,
                 'processed': False,
                 'created': time.time()
             }
@@ -160,26 +261,31 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
         if caption:
             report = parse_report(caption)
             if report:
-                await finalize_report(context, report, [photo_url], source="single_photo_caption")
+                report['_origin'] = origin
+                await reply_to_origin(context.bot, origin, "✅ 봉사보고서 접수 - 처리 중")
+                await finalize_report(context, report, [photo_url],
+                                      source="single_photo_caption", origin=origin)
                 return
 
         # 케이스 C/D/G: 텍스트 후 사진 도착 → PENDING 보고서에 연결
-        if chat_id in PENDING_REPORTS and not PENDING_REPORTS[chat_id].get('saved'):
-            PENDING_REPORTS[chat_id]['photos'].append(photo_url)
-            PENDING_REPORTS[chat_id]['last_photo_time'] = time.time()
-            print(f"📸 사진 추가 (현재 {len(PENDING_REPORTS[chat_id]['photos'])}장)")
-            if len(PENDING_REPORTS[chat_id]['photos']) >= 5:
-                entry = PENDING_REPORTS.pop(chat_id)
+        if pending_key in PENDING_REPORTS and not PENDING_REPORTS[pending_key].get('saved'):
+            PENDING_REPORTS[pending_key]['photos'].append(photo_url)
+            PENDING_REPORTS[pending_key]['last_photo_time'] = time.time()
+            print(f"📸 사진 추가 (현재 {len(PENDING_REPORTS[pending_key]['photos'])}장)")
+            if len(PENDING_REPORTS[pending_key]['photos']) >= 5:
+                entry = PENDING_REPORTS.pop(pending_key)
                 entry['saved'] = True
-                await finalize_report(context, entry['report'], entry['photos'], source="max_photos")
+                await finalize_report(context, entry['report'], entry['photos'],
+                                      source="max_photos",
+                                      origin=entry.get('origin'))
             return
 
         # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 보관
         cleanup_pending_photos()
-        if chat_id not in PENDING_PHOTOS:
-            PENDING_PHOTOS[chat_id] = {'photos': [], 'created': time.time()}
-        PENDING_PHOTOS[chat_id]['photos'].append(photo_url)
-        print(f"📸 사진 먼저 도착 보관 ({len(PENDING_PHOTOS[chat_id]['photos'])}장)")
+        if pending_key not in PENDING_PHOTOS:
+            PENDING_PHOTOS[pending_key] = {'photos': [], 'created': time.time()}
+        PENDING_PHOTOS[pending_key]['photos'].append(photo_url)
+        print(f"📸 사진 먼저 도착 보관 ({len(PENDING_PHOTOS[pending_key]['photos'])}장)")
 
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -203,17 +309,39 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     if chat_id == REPORT_GROUP_ID and thread_id not in EXCLUDED_TOPICS:
         report = parse_report(text)
         if report:
+            from handlers.report_base import make_origin, reply_to_origin
+            from database import log_report_stage
+            origin = make_origin(update)
+            pending_key = (chat_id, user_id)
+
+            log_report_stage('service', 'received', 'ok',
+                             user_id=user_id, chat_id=chat_id,
+                             topic_id=thread_id,
+                             message_id=update.message.message_id,
+                             detail=text[:120])
+            log_report_stage('service', 'parsed', 'ok', user_id=user_id,
+                             detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+
             # 케이스 F/G: 먼저 도착한 사진 연결
             pre_photos: list = []
-            if chat_id in PENDING_PHOTOS:
-                pre_photos = PENDING_PHOTOS.pop(chat_id)['photos']
-            PENDING_REPORTS[chat_id] = {
+            if pending_key in PENDING_PHOTOS:
+                pre_photos = PENDING_PHOTOS.pop(pending_key)['photos']
+
+            report['_origin'] = origin
+            PENDING_REPORTS[pending_key] = {
                 'report': report,
                 'photos': pre_photos,
                 'saved': False,
                 'last_photo_time': time.time() if pre_photos else 0,
+                'origin': origin,
             }
-            asyncio.create_task(flush_pending_report(context, chat_id))
+
+            photo_msg = f" (이미 받은 사진 {len(pre_photos)}장 포함)" if pre_photos else ""
+            await reply_to_origin(
+                context.bot, origin,
+                f"✅ 봉사보고서 접수{photo_msg}\n사진 대기 중 (60s+ 추가 5분 자동 연장)"
+            )
+            asyncio.create_task(flush_pending_report(context, pending_key))
             return
 
     MY_KEYWORDS = config.get('my_keywords')

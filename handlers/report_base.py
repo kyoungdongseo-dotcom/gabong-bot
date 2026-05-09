@@ -29,21 +29,70 @@ async def notify_admin(bot, message: str):
         print(f"❌ 관리자 알림 실패: {e}")
 
 
-async def send_to_recipient(bot, recipient_id: int, **kwargs):
-    """서무 DM 전송, 실패 시 관리자 백업 알림"""
+async def send_to_recipient(bot, recipient_id: int, retries: int = 3, **kwargs):
+    """서무 DM 전송. 실패 시 1초·2초 백오프 후 재시도. 최종 실패 시 관리자 백업."""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            if 'document' in kwargs:
+                await bot.send_document(chat_id=recipient_id, **kwargs)
+            else:
+                await bot.send_message(chat_id=recipient_id, **kwargs)
+            return True
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)  # 1, 2, 4초
+    await notify_admin(
+        bot,
+        f"❌ 서무({recipient_id}) DM {retries}회 실패: {last_err}\n"
+        f"내용: {str(kwargs.get('text', ''))[:300]}"
+    )
+    return False
+
+
+async def reply_to_origin(bot, origin: dict, text: str) -> bool:
+    """보고자 원본 메시지에 답글. origin = {chat_id, message_id, message_thread_id}"""
+    if not origin or not origin.get('chat_id') or not origin.get('message_id'):
+        return False
     try:
-        if 'document' in kwargs:
-            await bot.send_document(chat_id=recipient_id, **kwargs)
-        else:
-            await bot.send_message(chat_id=recipient_id, **kwargs)
+        kwargs = {
+            'chat_id': origin['chat_id'],
+            'text': text[:4000],
+            'reply_to_message_id': origin['message_id'],
+        }
+        if origin.get('message_thread_id'):
+            kwargs['message_thread_id'] = origin['message_thread_id']
+        await bot.send_message(**kwargs)
         return True
     except Exception as e:
-        await notify_admin(
-            bot,
-            f"❌ 서무({recipient_id}) DM 전송 실패: {e}\n"
-            f"내용: {str(kwargs.get('text', ''))[:300]}"
-        )
+        print(f"⚠️ 보고자 답글 실패: {e}")
         return False
+
+
+def make_origin(update) -> dict:
+    """telegram Update에서 보고자 메시지 위치 추출"""
+    if not update or not update.message:
+        return {}
+    return {
+        'chat_id': update.effective_chat.id,
+        'message_id': update.message.message_id,
+        'message_thread_id': update.message.message_thread_id,
+        'user_id': update.effective_user.id if update.effective_user else None,
+    }
+
+
+def with_sheet_retry(save_fn, data, retries: int = 3) -> bool:
+    """시트 저장 재시도. 실패 시 1·2·4초 백오프."""
+    for attempt in range(retries):
+        try:
+            if save_fn(data):
+                return True
+        except Exception as e:
+            print(f"⚠️ 시트 저장 attempt {attempt+1} 실패: {e}")
+        if attempt < retries - 1:
+            time.sleep(2 ** attempt)
+    return False
 
 
 def format_alias_hint(field: str, aliases_dict: dict) -> str:
@@ -53,21 +102,27 @@ def format_alias_hint(field: str, aliases_dict: dict) -> str:
 
 # ── 사진 다운로드 ──────────────────────────────────────────────────────────────
 
-def download_photo(url: str) -> str | None:
-    try:
-        token = config.get('telegram_token')
-        full_url = url if url.startswith('http') else f"https://api.telegram.org/file/bot{token}/{url}"
-        resp = requests.get(full_url, timeout=10)
-        if resp.status_code == 200:
-            suffix = '.jpg' if 'jpg' in url.lower() else '.png'
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            tmp.write(resp.content)
-            tmp.close()
-            return tmp.name
-        return None
-    except Exception as e:
-        print(f"❌ 사진 다운로드 오류: {e}")
-        return None
+def download_photo(url: str, retries: int = 3, delay: int = 5) -> str | None:
+    """사진 다운로드 (최대 retries회, 실패 시 delay초 대기 후 재시도)"""
+    token = config.get('telegram_token')
+    full_url = url if url.startswith('http') else f"https://api.telegram.org/file/bot{token}/{url}"
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(full_url, timeout=10)
+            if resp.status_code == 200:
+                suffix = '.jpg' if 'jpg' in url.lower() else '.png'
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                tmp.write(resp.content)
+                tmp.close()
+                return tmp.name
+            last_err = f"HTTP {resp.status_code}"
+        except Exception as e:
+            last_err = str(e)
+        if attempt < retries - 1:
+            time.sleep(delay)
+    print(f"❌ 사진 다운로드 {retries}회 모두 실패 ({last_err}): {url[:60]}")
+    return None
 
 
 async def download_photos_batch(photo_urls: list) -> tuple:

@@ -2,11 +2,18 @@ from telegram import Update
 from utils.permissions import check_admin
 from telegram.ext import ContextTypes
 import asyncio
+import config
 from utils import ask_claude, get_chat_history, clear_chat_history, get_chat_mode, CHAT_HISTORY, GROUP_MESSAGES
 
 async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    chat_id = update.effective_chat.id
+    if chat_id < 0:
+        allowed_groups = config.get('allowed_groups') or []
+        if allowed_groups and chat_id not in allowed_groups:
+            await update.message.reply_text("❌ 이 그룹에서는 /ai를 사용할 수 없습니다.")
+            return
     if not await check_admin(update, context):
         return
     if not context.args:

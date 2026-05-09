@@ -29,6 +29,9 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    if query.from_user.id not in config.get('admin_ids', []):
+        await query.answer("❌ 권한이 없습니다.", show_alert=True)
+        return
     await query.answer()
     print(f"[ADMIN] 버튼 클릭: {query.data}")
     text = "오류가 발생했습니다."

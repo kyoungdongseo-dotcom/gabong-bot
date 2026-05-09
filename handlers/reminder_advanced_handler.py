@@ -4,6 +4,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
+import config
 from utils import load_reminders, save_reminders
 
 
@@ -62,6 +63,9 @@ async def handle_remind_if_keyword_command(update: Update, context: ContextTypes
     예: /remind_if_keyword 회의 회의 시간입니다!
     """
     if not update.message or not update.message.text:
+        return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
         return
 
     try:

@@ -11,6 +11,9 @@ DAY_MAP = {"월": "mon", "화": "tue", "수": "wed", "목": "thu",
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
+        return
     if len(context.args) < 2:
         await update.message.reply_text("사용법: /remind_daily HH:MM [내용]")
         return
@@ -31,6 +34,9 @@ async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
         return
     if len(context.args) < 3:
         await update.message.reply_text("사용법: /remind_weekly 월,수,금 HH:MM [내용]")
@@ -55,6 +61,9 @@ async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
+        return
     if len(context.args) < 3:
         await update.message.reply_text("사용법: /remind_biweekly 월 HH:MM [내용]")
         return
@@ -77,6 +86,9 @@ async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
         return
     if len(context.args) < 3:
         await update.message.reply_text("사용법: /remind_monthly 일자 HH:MM [내용]")
@@ -197,6 +209,9 @@ async def broadcast_remind_monthly(update: Update, context: ContextTypes.DEFAULT
 async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
+        return
     chat_id = update.effective_chat.id
     all_reminders = get_reminders()
     reminders = [
@@ -238,6 +253,9 @@ async def my_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
+        return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
         return
     if not context.args:
         await update.message.reply_text("사용법: /delete_reminder [ID]")

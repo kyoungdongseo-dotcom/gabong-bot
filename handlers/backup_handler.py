@@ -36,7 +36,9 @@ def _get_or_create_folder(service) -> str:
 
     results = service.files().list(
         q="name='gabong-backup' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-        fields="files(id)"
+        fields="files(id)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
     ).execute()
     files = results.get("files", [])
 
@@ -44,7 +46,7 @@ def _get_or_create_folder(service) -> str:
         fid = files[0]["id"]
     else:
         meta = {"name": "gabong-backup", "mimeType": "application/vnd.google-apps.folder"}
-        folder = service.files().create(body=meta, fields="id").execute()
+        folder = service.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
         fid = folder["id"]
 
     config.set_value("backup_folder_id", fid)
@@ -55,12 +57,14 @@ def _delete_old_backups(service, folder_id: str, days: int = 7) -> int:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     results = service.files().list(
         q=f"'{folder_id}' in parents and name contains 'gabong_backup_' and trashed=false and createdTime < '{cutoff}'",
-        fields="files(id)"
+        fields="files(id)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
     ).execute()
     deleted = 0
     for f in results.get("files", []):
         try:
-            service.files().delete(fileId=f["id"]).execute()
+            service.files().delete(fileId=f["id"], supportsAllDrives=True).execute()
             deleted += 1
         except Exception:
             pass
@@ -91,7 +95,8 @@ def _do_backup() -> str:
         file_meta = {"name": zip_name, "parents": [folder_id]}
         media = MediaFileUpload(zip_path, mimetype="application/zip")
         uploaded = service.files().create(
-            body=file_meta, media_body=media, fields="id,size"
+            body=file_meta, media_body=media, fields="id,size",
+            supportsAllDrives=True,
         ).execute()
 
         size_kb = int(uploaded.get("size", 0)) // 1024

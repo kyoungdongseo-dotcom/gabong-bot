@@ -145,8 +145,8 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '5. 잘된 점', report.get('잘된점'))
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
 
-        # 사진 다운로드 및 삽입
-        photo_urls = [report.get(f'사진{i}링크', '') for i in range(1, 6)
+        # 사진 다운로드 및 삽입 (최대 10장)
+        photo_urls = [report.get(f'사진{i}링크', '') for i in range(1, 11)
                       if report.get(f'사진{i}링크')]
 
         if photo_urls:

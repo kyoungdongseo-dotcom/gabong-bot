@@ -37,7 +37,10 @@ def parse_report(text: str) -> dict | None:
         '활동내용': '', '반응특이사항': '', '참여인사': '',
         '홍보도구': '', '잘된점': '', '개선할점': '',
         '사진1링크': '', '사진2링크': '', '사진3링크': '',
-        '사진4링크': '', '사진5링크': '', '원본메시지': text,
+        '사진4링크': '', '사진5링크': '',
+        '사진6링크': '', '사진7링크': '', '사진8링크': '',
+        '사진9링크': '', '사진10링크': '',
+        '원본메시지': text,
     }
 
     # 지파명/교회명: 브래킷 형식 우선, 실패 시 첫 줄 토큰
@@ -98,6 +101,7 @@ def parse_report(text: str) -> dict | None:
 
 
 def save_report_to_sheet(report: dict, service, spreadsheet_id: str):
+    """봉사리포트 저장. 기존 A:W 23컬럼 호환을 위해 사진6~10링크는 마지막에 append."""
     try:
         row = [
             report.get('등록일시', ''),
@@ -123,11 +127,17 @@ def save_report_to_sheet(report: dict, service, spreadsheet_id: str):
             report.get('사진4링크', ''),
             report.get('사진5링크', ''),
             report.get('원본메시지', ''),
+            # 사진 6~10링크는 X~AB 컬럼에 추가 (기존 A:W 컬럼 호환)
+            report.get('사진6링크', ''),
+            report.get('사진7링크', ''),
+            report.get('사진8링크', ''),
+            report.get('사진9링크', ''),
+            report.get('사진10링크', ''),
         ]
 
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range="봉사리포트!A:W",
+            range="봉사리포트!A:AB",
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}

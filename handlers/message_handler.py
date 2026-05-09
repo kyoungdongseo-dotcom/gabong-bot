@@ -20,7 +20,8 @@ PENDING_REPORTS = {}
 
 # 사진 먼저 도착했을 때 임시 보관 (텍스트 나중에 올 때 연결용)
 PENDING_PHOTOS = {}
-PHOTOS_TTL = 300   # 5분
+PHOTOS_TTL = 600   # 10분 — 여러 앨범 누적 시간 고려
+MAX_PHOTOS = 10
 
 # award(3553)/mou(3225) 토픽 — 해당 핸들러가 직접 처리
 EXCLUDED_TOPICS = {3553, 3225}
@@ -58,7 +59,7 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
     if origin is None:
         origin = report.get('_origin', {}) or {}
     user_id = origin.get('user_id')
-    for i, url in enumerate(photos[:5], 1):
+    for i, url in enumerate(photos[:MAX_PHOTOS], 1):
         report[f'사진{i}링크'] = url
 
     sheet_ok = False
@@ -180,7 +181,7 @@ async def process_media_group(context, media_group_id: str):
         return
     MEDIA_GROUP_CACHE[media_group_id]['processed'] = True
     caption = cache.get('caption', '')
-    photos = cache.get('photos', [])[:5]
+    photos = cache.get('photos', [])[:MAX_PHOTOS]
     chat_id = cache.get('chat_id')
     user_id = cache.get('user_id')
     origin = cache.get('origin', {})
@@ -193,9 +194,15 @@ async def process_media_group(context, media_group_id: str):
         pending = PENDING_REPORTS.pop(pending_key)
         if not pending.get('saved'):
             pending['saved'] = True
+            merged = (pending.get('photos', []) + photos)[:MAX_PHOTOS]
+            ignored = max(0, len(pending.get('photos', [])) + len(photos) - MAX_PHOTOS)
+            if ignored > 0:
+                await reply_to_origin(
+                    context.bot, origin,
+                    f"⚠️ 사진 {ignored}장 무시됨 (한도 {MAX_PHOTOS}장)"
+                )
             await finalize_report(
-                context, pending['report'],
-                pending.get('photos', []) + photos,
+                context, pending['report'], merged,
                 source="album_linked",
                 origin=pending.get('origin', origin),
             )
@@ -267,25 +274,25 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                                       source="single_photo_caption", origin=origin)
                 return
 
-        # 케이스 C/D/G: 텍스트 후 사진 도착 → PENDING 보고서에 연결
+        from handlers.report_base import add_photos_to_pending, format_photo_count_msg
+
+        # 케이스 C/D/G: 텍스트 후 사진 도착 → PENDING 보고서에 누적
         if pending_key in PENDING_REPORTS and not PENDING_REPORTS[pending_key].get('saved'):
-            PENDING_REPORTS[pending_key]['photos'].append(photo_url)
-            PENDING_REPORTS[pending_key]['last_photo_time'] = time.time()
-            print(f"📸 사진 추가 (현재 {len(PENDING_REPORTS[pending_key]['photos'])}장)")
-            if len(PENDING_REPORTS[pending_key]['photos']) >= 5:
-                entry = PENDING_REPORTS.pop(pending_key)
-                entry['saved'] = True
-                await finalize_report(context, entry['report'], entry['photos'],
-                                      source="max_photos",
-                                      origin=entry.get('origin'))
+            added, total, ignored = add_photos_to_pending(
+                PENDING_REPORTS, pending_key, [photo_url], MAX_PHOTOS
+            )
+            if added > 0:
+                PENDING_REPORTS[pending_key]['last_photo_time'] = time.time()
+            await reply_to_origin(context.bot, origin, format_photo_count_msg(total, ignored))
             return
 
-        # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 보관
+        # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 누적
         cleanup_pending_photos()
-        if pending_key not in PENDING_PHOTOS:
-            PENDING_PHOTOS[pending_key] = {'photos': [], 'created': time.time()}
-        PENDING_PHOTOS[pending_key]['photos'].append(photo_url)
-        print(f"📸 사진 먼저 도착 보관 ({len(PENDING_PHOTOS[pending_key]['photos'])}장)")
+        added, total, ignored = add_photos_to_pending(
+            PENDING_PHOTOS, pending_key, [photo_url], MAX_PHOTOS,
+            init_extra={'created': time.time()}
+        )
+        await reply_to_origin(context.bot, origin, format_photo_count_msg(total, ignored))
 
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:

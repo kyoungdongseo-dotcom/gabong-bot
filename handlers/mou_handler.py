@@ -28,7 +28,10 @@ MOU_TOPIC_ID = 3225
 MOU_RECIPIENT_ID = 754270008
 
 MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간',
-               '사진1링크', '사진2링크', '사진3링크', '사진4링크', '사진5링크']
+               '사진1링크', '사진2링크', '사진3링크', '사진4링크', '사진5링크',
+               '사진6링크', '사진7링크', '사진8링크', '사진9링크', '사진10링크']
+
+MAX_PHOTOS = 10
 
 MOU_KEY_ALIASES = {
     '협약명': ['협약명', '보고제목', 'MOU명', '사업명'],
@@ -60,10 +63,10 @@ async def _notify_admin(context, error_text: str):
     except Exception as e:
         print(f"❌ 관리자 알림 실패: {e}")
 
-MOU_PENDING_REPORTS = {}   # (chat_id, topic_id) -> {data, photos, saved, last_photo_time, created}
-MOU_PENDING_PHOTOS = {}    # (chat_id, topic_id) -> {photos, created}
-MOU_MEDIA_CACHE = {}       # media_group_id -> {photos, caption, processed, created}
-MOU_PHOTOS_TTL = 300       # 5분
+MOU_PENDING_REPORTS = {}   # (chat_id, topic_id, user_id) -> {data, photos, saved, last_photo_time, created, origin}
+MOU_PENDING_PHOTOS = {}    # (chat_id, topic_id, user_id) -> {photos, created}
+MOU_MEDIA_CACHE = {}       # media_group_id -> {photos, caption, processed, created, key, origin}
+MOU_PHOTOS_TTL = 600       # 10분
 
 
 # ── 파싱 ─────────────────────────────────────────────────────────────────────
@@ -107,16 +110,26 @@ def _get_mou_service():
 def _ensure_mou_header(service, spreadsheet_id: str):
     result = service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
-        range='협약보고창!A1:M1'
+        range='협약보고창!A1:Z1'
     ).execute()
     existing = result.get('values', [[]])
-    if not existing or not any(existing[0]):
+    existing_row = existing[0] if existing else []
+    if not existing_row or not any(existing_row):
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range='협약보고창!A1',
             valueInputOption='RAW',
             body={'values': [MOU_HEADERS]}
         ).execute()
+        return
+    if len(existing_row) < len(MOU_HEADERS):
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range='협약보고창!A1',
+            valueInputOption='RAW',
+            body={'values': [MOU_HEADERS]}
+        ).execute()
+        print(f"✅ 협약보고창 헤더 마이그레이션: {len(existing_row)} → {len(MOU_HEADERS)}컬럼")
 
 
 def save_mou_to_sheet(data: dict) -> bool:
@@ -127,7 +140,7 @@ def save_mou_to_sheet(data: dict) -> bool:
         row = [data.get(h, '') for h in MOU_HEADERS]
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range='협약보고창!A:M',
+            range='협약보고창!A:R',
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}
@@ -390,7 +403,7 @@ async def _finalize_mou(context, data: dict, photos: list, *, origin: dict = Non
         origin = data.get('_origin', {}) or {}
     user_id = origin.get('user_id')
     try:
-        for i in range(1, 6):
+        for i in range(1, MAX_PHOTOS + 1):
             data[f'사진{i}링크'] = photos[i-1] if i <= len(photos) else ''
 
         loop = asyncio.get_running_loop()
@@ -405,7 +418,7 @@ async def _finalize_mou(context, data: dict, photos: list, *, origin: dict = Non
                          topic_id=origin.get('message_thread_id'),
                          message_id=origin.get('message_id'))
 
-        tmp_files, photo_failed = await download_photos_batch(photos[:5])
+        tmp_files, photo_failed = await download_photos_batch(photos[:MAX_PHOTOS])
         log_report_stage(
             'mou', 'photos_downloaded',
             'ok' if photo_failed == 0 else ('partial' if tmp_files else 'fail'),
@@ -550,7 +563,7 @@ async def _process_mou_album(context, media_group_id: str):
         return
     MOU_MEDIA_CACHE[media_group_id]['processed'] = True
     caption = cache.get('caption', '')
-    photos = cache.get('photos', [])[:5]
+    photos = cache.get('photos', [])[:MAX_PHOTOS]
     key = cache.get('key')
     origin = cache.get('origin', {})
 
@@ -568,8 +581,14 @@ async def _process_mou_album(context, media_group_id: str):
         pending = MOU_PENDING_REPORTS.pop(key)
         pending['saved'] = True
         _delete_pending_from_db(key)
-        await _finalize_mou(context, pending['data'],
-                            pending['photos'] + photos,
+        merged = (pending['photos'] + photos)[:MAX_PHOTOS]
+        ignored = max(0, len(pending['photos']) + len(photos) - MAX_PHOTOS)
+        if ignored > 0:
+            await reply_to_origin(
+                context.bot, origin,
+                f"⚠️ 사진 {ignored}장 무시됨 (한도 {MAX_PHOTOS}장)"
+            )
+        await _finalize_mou(context, pending['data'], merged,
                             origin=pending.get('origin', origin))
         return
 
@@ -607,10 +626,14 @@ async def _process_mou_album(context, media_group_id: str):
 
     if key:
         _cleanup_mou_photos()
-        if key not in MOU_PENDING_PHOTOS:
-            MOU_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
-        MOU_PENDING_PHOTOS[key]['photos'].extend(photos)
-        _save_pending_photos_to_db(key, MOU_PENDING_PHOTOS[key]['photos'])
+        from handlers.report_base import add_photos_to_pending, format_photo_count_msg
+        added, total, ignored = add_photos_to_pending(
+            MOU_PENDING_PHOTOS, key, photos, MAX_PHOTOS,
+            init_extra={'created': time.time()}
+        )
+        if added > 0:
+            _save_pending_photos_to_db(key, MOU_PENDING_PHOTOS[key]['photos'])
+        await reply_to_origin(context.bot, origin, format_photo_count_msg(total, ignored))
 
 
 async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -678,19 +701,28 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _finalize_mou(context, data, [photo_url], origin=origin)
         return
 
+    from handlers.report_base import add_photos_to_pending, format_photo_count_msg
+
     # 케이스 C/D/G: 텍스트 후 사진 도착
     if key in MOU_PENDING_REPORTS and not MOU_PENDING_REPORTS[key].get('saved'):
-        MOU_PENDING_REPORTS[key]['photos'].append(photo_url)
-        MOU_PENDING_REPORTS[key]['last_photo_time'] = time.time()
-        _save_pending_to_db(key, MOU_PENDING_REPORTS[key])
+        added, total, ignored = add_photos_to_pending(
+            MOU_PENDING_REPORTS, key, [photo_url], MAX_PHOTOS
+        )
+        if added > 0:
+            MOU_PENDING_REPORTS[key]['last_photo_time'] = time.time()
+            _save_pending_to_db(key, MOU_PENDING_REPORTS[key])
+        await reply_to_origin(context.bot, origin, format_photo_count_msg(total, ignored))
         return
 
-    # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 보관
+    # 케이스 F: 사진 먼저 도착 → PENDING_PHOTOS 누적 보관
     _cleanup_mou_photos()
-    if key not in MOU_PENDING_PHOTOS:
-        MOU_PENDING_PHOTOS[key] = {'photos': [], 'created': time.time()}
-    MOU_PENDING_PHOTOS[key]['photos'].append(photo_url)
-    _save_pending_photos_to_db(key, MOU_PENDING_PHOTOS[key]['photos'])
+    added, total, ignored = add_photos_to_pending(
+        MOU_PENDING_PHOTOS, key, [photo_url], MAX_PHOTOS,
+        init_extra={'created': time.time()}
+    )
+    if added > 0:
+        _save_pending_photos_to_db(key, MOU_PENDING_PHOTOS[key]['photos'])
+    await reply_to_origin(context.bot, origin, format_photo_count_msg(total, ignored))
 
 
 async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -203,6 +203,41 @@ def cleanup_pending_photos(pending_dict: dict, ttl: int = 300):
         pending_dict.pop(k, None)
 
 
+# 보고서당 최대 사진 수
+MAX_PHOTOS = 10
+
+
+def add_photos_to_pending(pending_dict: dict, key, new_photos: list,
+                          max_total: int = MAX_PHOTOS,
+                          init_extra: dict = None) -> tuple:
+    """
+    pending_dict[key]['photos']에 사진 누적, max_total 도달 시 무시.
+    pending_dict[key] 없으면 생성 (init_extra로 추가 필드 설정 가능).
+    Returns: (added_count, total_after, ignored_count)
+    """
+    if key not in pending_dict:
+        pending_dict[key] = {'photos': []}
+        if init_extra:
+            pending_dict[key].update(init_extra)
+    current_photos = pending_dict[key]['photos']
+    if len(current_photos) >= max_total:
+        return 0, len(current_photos), len(new_photos)
+    can_add = max_total - len(current_photos)
+    to_add = new_photos[:can_add]
+    current_photos.extend(to_add)
+    return len(to_add), len(current_photos), len(new_photos) - len(to_add)
+
+
+def format_photo_count_msg(total: int, ignored: int = 0,
+                            max_total: int = MAX_PHOTOS) -> str:
+    """사진 누적 카운트 메시지"""
+    if total >= max_total and ignored > 0:
+        return f"📸 {total}/{max_total}장 접수 (추가 {ignored}장 무시됨)"
+    if total >= max_total:
+        return f"📸 {total}/{max_total}장 접수 (이후 추가 사진은 무시됩니다)"
+    return f"📸 {total}/{max_total}장 접수"
+
+
 async def flush_pending_generic(
     pending_dict: dict,
     key,

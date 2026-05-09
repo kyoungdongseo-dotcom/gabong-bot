@@ -90,7 +90,7 @@ def add_photos_grid(doc, photo_paths):
                 para = cell.paragraphs[0]
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run = para.add_run()
-                run.add_picture(path, width=Inches(2.8))
+                run.add_picture(path, width=Cm(8), height=Cm(5))
             except Exception as e:
                 print(f"❌ 사진 삽입 오류: {e}")
                 cell.paragraphs[0].add_run("사진 오류")

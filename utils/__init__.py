@@ -221,20 +221,30 @@ async def send_broadcast_reminder(bot, text):
 
 async def send_daily_summary(bot):
     SUMMARY_GROUPS = config.get('summary_groups')
-    for group_id, group_name in SUMMARY_GROUPS.items():
+    MY_USER_ID = config.get('my_user_id')
+
+    # 오늘 KST 00:00 → UTC 변환 (KST = UTC+9)
+    now_kst = datetime.utcnow() + timedelta(hours=9)
+    since_utc = now_kst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=9)
+
+    for group_id_str, group_name in SUMMARY_GROUPS.items():
         try:
-            if group_id in GROUP_MESSAGES and GROUP_MESSAGES[group_id]:
-                history = "\n".join(GROUP_MESSAGES[group_id])
+            group_id = int(group_id_str)
+
+            # GROUP_MESSAGES(int 키) 대신 SQLite에서 직접 조회 → 재시작 후에도 유지
+            rows = fetch_weekly_messages(group_id, since_utc)
+            user_msgs = [r for r in rows if r["role"] == "user"]
+
+            if user_msgs:
+                history = "\n".join(f"{r['user_name']}: {r['text']}" for r in user_msgs)
                 question = f"다음은 오늘 '{group_name}' 그룹의 대화 내용입니다. 핵심 내용을 한국어로 요약해주세요:\n{history}"
                 summary = ask_claude(question)
-                MY_USER_ID = config.get('my_user_id')
                 await bot.send_message(
                     chat_id=MY_USER_ID,
                     text=f"📋 일일 요약 - {group_name}\n\n{summary}"
                 )
-                GROUP_MESSAGES[group_id] = []
+                GROUP_MESSAGES.pop(group_id, None)
             else:
-                MY_USER_ID = config.get('my_user_id')
                 await bot.send_message(
                     chat_id=MY_USER_ID,
                     text=f"📋 일일 요약 - {group_name}\n\n오늘 대화 내용이 없습니다."

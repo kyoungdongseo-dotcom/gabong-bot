@@ -197,6 +197,9 @@ async def build_weekly_message() -> str:
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
+        return
     message = await build_weekly_message()
     await update.message.reply_text(message)
 

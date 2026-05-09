@@ -1,5 +1,5 @@
 from telegram.ext import CommandHandler, MessageHandler, filters
-from handlers.notice_handler import start, notice, broadcast, broadcast_photo, notice_photo
+from handlers.notice_handler import start, notice, broadcast, broadcast_photo
 from handlers.weekly_schedule_handler import schedule, weekly_report
 
 

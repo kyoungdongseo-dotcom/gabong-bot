@@ -75,7 +75,40 @@ def load_plugins(enabled_names):
     return plugins
 
 
+def _startup_checks():
+    """봇 시작 시 필수 환경 자가 진단 (경고만, 크래시 없음)"""
+    ok = True
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("⚠️ [진단] ANTHROPIC_API_KEY 미설정 → /ai 기능 불가")
+        ok = False
+
+    for fname in ("credentials.json", "serviceAccountKey.json"):
+        if not os.path.exists(fname):
+            print(f"⚠️ [진단] {fname} 없음 → Google Sheets 연동 불가")
+            ok = False
+
+    required_keys = ["telegram_token", "group_id", "admin_ids", "spreadsheet_id"]
+    for key in required_keys:
+        if not config.get(key):
+            print(f"⚠️ [진단] config.json 필수 키 누락: {key}")
+            ok = False
+
+    try:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect("./data/gabong.db")
+        conn.execute("SELECT 1")
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ [진단] SQLite 접근 실패: {e}")
+        ok = False
+
+    if ok:
+        print("✅ [진단] 모든 환경 점검 통과")
+
+
 async def post_init(app):
+    _startup_checks()
     init_database()
     loop = asyncio.get_running_loop()
     scheduler.configure(event_loop=loop)

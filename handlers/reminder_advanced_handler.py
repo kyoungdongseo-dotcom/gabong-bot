@@ -1,8 +1,5 @@
-import json
 import asyncio
-from datetime import datetime, timedelta
-from collections import Counter
-from typing import Dict, List, Optional
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes

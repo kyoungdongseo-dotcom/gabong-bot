@@ -1,6 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 import asyncio
+import time
 import config
 from utils import ask_claude, get_chat_mode, log_message, GROUP_MESSAGES, LAST_MENTION, save_last_mention
 from handlers.report_parser import parse_report, save_report_to_sheet
@@ -15,8 +16,16 @@ DOCX_RECIPIENT_ID = 754270008
 MEDIA_GROUP_CACHE = {}
 
 # 텍스트 보고서 임시 저장 (사진 나중에 올 때 연결용)
-# {chat_id: {'report': dict, 'photos': [], 'timestamp': float}}
 PENDING_REPORTS = {}
+
+# 5분 후 만료된 MEDIA_GROUP_CACHE 정리
+CACHE_TTL = 300
+
+def cleanup_media_cache():
+    now = time.time()
+    expired = [k for k, v in MEDIA_GROUP_CACHE.items() if now - v.get('created', 0) > CACHE_TTL]
+    for k in expired:
+        del MEDIA_GROUP_CACHE[k]
 
 def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
@@ -39,7 +48,8 @@ async def finalize_report(context, report: dict, photos: list, source: str = "")
                     f"📌 {report.get('지파명')} {report.get('교회명')}\n"
                     f"📋 {report.get('활동명')}\n"
                     f"👥 총 봉사자: {report.get('총봉사자')}명\n"
-                    f"{photo_text}"
+                    f"{photo_text}\n"
+                    f"📎 출처: {source}"
                 )
             )
             await generate_and_send_docx(context.bot, DOCX_RECIPIENT_ID, report)
@@ -47,13 +57,23 @@ async def finalize_report(context, report: dict, photos: list, source: str = "")
         print(f"❌ 보고서 저장 오류: {e}")
 
 async def flush_pending_report(context, chat_id: int):
-    """3초 대기 후 사진 없어도 저장"""
-    await asyncio.sleep(3)
+    """30초 대기 후 저장 (사진 도착할 때마다 타이머 리셋)"""
+    await asyncio.sleep(30)
+    entry = PENDING_REPORTS.get(chat_id)
+    if not entry or entry.get('saved'):
+        return
+    # 마지막 사진 도착 후 5초 이상 지났는지 확인
+    last_photo_time = entry.get('last_photo_time', 0)
+    if last_photo_time > 0 and (time.time() - last_photo_time) < 5:
+        # 아직 사진 올리는 중 → 5초 더 대기
+        await asyncio.sleep(5)
     entry = PENDING_REPORTS.pop(chat_id, None)
     if not entry or entry.get('saved'):
         return
-    print(f"⏳ 사진 대기 완료 → 저장 진행 (사진 {len(entry['photos'])}장)")
-    await finalize_report(context, entry['report'], entry['photos'], source="delayed")
+    entry['saved'] = True
+    photo_count = len(entry['photos'])
+    print(f"⏳ 사진 대기 완료 → 저장 진행 (사진 {photo_count}장)")
+    await finalize_report(context, entry['report'], entry['photos'], source=f"delayed_{photo_count}photos")
 
 async def process_media_group(context, media_group_id: str):
     """앨범 사진 수집 완료 후 처리"""
@@ -80,6 +100,8 @@ async def process_media_group(context, media_group_id: str):
         if report:
             await finalize_report(context, report, photos, source="album_caption")
 
+    cleanup_media_cache()
+
 async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.photo:
         return
@@ -102,7 +124,8 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                 'caption': '',
                 'photos': [],
                 'chat_id': chat_id,
-                'processed': False
+                'processed': False,
+                'created': time.time()
             }
             asyncio.create_task(process_media_group(context, media_group_id))
         MEDIA_GROUP_CACHE[media_group_id]['photos'].append(photo_url)
@@ -119,6 +142,8 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
         # 캡션 없이 사진만 → PENDING 보고서에 연결
         if chat_id in PENDING_REPORTS and not PENDING_REPORTS[chat_id].get('saved'):
             PENDING_REPORTS[chat_id]['photos'].append(photo_url)
+            PENDING_REPORTS[chat_id]['last_photo_time'] = time.time()
+            print(f"📸 사진 추가 (현재 {len(PENDING_REPORTS[chat_id]['photos'])}장)")
             # 사진이 5장 모이면 바로 저장
             if len(PENDING_REPORTS[chat_id]['photos']) >= 5:
                 entry = PENDING_REPORTS.pop(chat_id)
@@ -147,14 +172,14 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     if chat_id == REPORT_GROUP_ID:
         report = parse_report(text)
         if report:
-            # 즉시 저장하지 않고 3초 대기 → 사진 먼저 올 수도 있음
             PENDING_REPORTS[chat_id] = {
                 'report': report,
                 'photos': [],
-                'saved': False
+                'saved': False,
+                'last_photo_time': 0
             }
             asyncio.create_task(flush_pending_report(context, chat_id))
-            return  # 여기서 return, finalize_report에서 저장됨
+            return
 
     MY_KEYWORDS = config.get('my_keywords')
     my_keyword_found = any(kw in text for kw in MY_KEYWORDS)
@@ -174,8 +199,13 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     MENTION_KEYWORDS = config.get('mention_keywords')
     EXCLUDE_GROUPS = config.get('exclude_groups')
     TOPIC_IDS = config.get('topic_ids')
+    PARTIAL_EXCLUDE = config.get('partial_exclude_groups') or {}
     for keyword, topic_name in MENTION_KEYWORDS.items():
         if keyword in text and update.effective_user.id not in AUTHORIZED_USERS and chat_id not in EXCLUDE_GROUPS:
+            # 부분 제외 그룹 처리
+            partial_keywords = PARTIAL_EXCLUDE.get(str(chat_id), [])
+            if partial_keywords and keyword in partial_keywords:
+                continue
             group_name = update.message.chat.title or "그룹"
             sender = update.effective_user.first_name
             topic_id = TOPIC_IDS[topic_name]

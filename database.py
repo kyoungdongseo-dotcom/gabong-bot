@@ -3,12 +3,8 @@ import json
 import os
 from datetime import datetime
 
-# 로컬과 Railway 환경 모두 지원
-if os.path.exists('/data'):
-    DB_PATH = "/data/gabong.db"
-else:
-    os.makedirs("./data", exist_ok=True)
-    DB_PATH = "./data/gabong.db"
+os.makedirs("./data", exist_ok=True)
+DB_PATH = "./data/gabong.db"
 
 def get_conn():
     """DB 연결"""
@@ -69,15 +65,17 @@ def init_db():
     conn.close()
     print("✅ DB 초기화 완료")
 
-def add_reminder(group_id, topic_id, r_type, message, time=None, day_of_week=None, day_of_month=None):
-    """리마인더 추가"""
+def add_reminder(group_id, topic_id, r_type, message, time=None, day_of_week=None, day_of_month=None) -> int:
+    """리마인더 추가 후 생성된 ID 반환"""
     conn = get_conn()
-    conn.execute("""
+    cursor = conn.execute("""
         INSERT INTO reminders (group_id, topic_id, type, message, time, day_of_week, day_of_month)
         VALUES (?,?,?,?,?,?,?)
     """, (group_id, topic_id, r_type, message, time, day_of_week, day_of_month))
     conn.commit()
+    inserted_id = cursor.lastrowid
     conn.close()
+    return inserted_id
 
 def get_reminders(r_type=None, group_id=None):
     """리마인더 조회"""

@@ -1,11 +1,5 @@
 import asyncio
-
 import os
-if os.path.exists('.env'):
-    print('ERROR: 로컬에서 실행 불가')
-    print('이 봇은 Railway에서만 실행됩니다')
-    exit(1)
-
 import pkgutil
 import importlib
 from pathlib import Path

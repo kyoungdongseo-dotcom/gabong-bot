@@ -1,6 +1,8 @@
 import asyncio
+import atexit
 import os
 import signal
+import time
 import pkgutil
 import importlib
 from pathlib import Path
@@ -14,15 +16,26 @@ from handlers.monthly_stats_handler import send_monthly_stats
 PID_FILE = "./data/bot.pid"
 
 
+def _cleanup_pid():
+    """정상 종료 시 PID 파일 제거 (atexit 등록용)"""
+    try:
+        if os.path.exists(PID_FILE):
+            with open(PID_FILE) as f:
+                if f.read().strip() == str(os.getpid()):
+                    os.remove(PID_FILE)
+    except Exception:
+        pass
+
+
 def ensure_single_instance():
     """이전 봇 프로세스 종료 후 현재 PID 저장"""
     os.makedirs("./data", exist_ok=True)
     if os.path.exists(PID_FILE):
         try:
-            old_pid = int(open(PID_FILE).read().strip())
+            with open(PID_FILE) as f:
+                old_pid = int(f.read().strip())
             os.kill(old_pid, signal.SIGTERM)
-            print(f"[PID] 이전 봇(PID {old_pid}) 종료")
-            import time
+            print(f"[PID] 이전 봇(PID {old_pid}) 종료 요청")
             time.sleep(2)
         except (ProcessLookupError, ValueError):
             pass
@@ -30,6 +43,7 @@ def ensure_single_instance():
             print(f"[PID] 이전 봇 종료 권한 없음 - 무시")
     with open(PID_FILE, 'w') as f:
         f.write(str(os.getpid()))
+    atexit.register(_cleanup_pid)
     print(f"[PID] 현재 봇 PID {os.getpid()} 등록")
 
 

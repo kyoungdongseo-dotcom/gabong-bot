@@ -92,6 +92,7 @@ async def process_media_group(context, media_group_id: str):
         if not pending.get('saved'):
             pending['saved'] = True
             await finalize_report(context, pending['report'], photos, source="album_linked")
+        cleanup_media_cache()
         return
 
     # 캡션에 보고서 있는 경우

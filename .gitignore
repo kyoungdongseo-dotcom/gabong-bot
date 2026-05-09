@@ -31,3 +31,7 @@ Thumbs.db
 # 로그
 *.log
 logs/
+config.json
+credentials.json
+serviceAccountKey.json
+data/

@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import asyncio
 import config
-from utils import ask_claude, get_chat_mode, log_message, GROUP_MESSAGES, LAST_MENTION
+from utils import ask_claude, get_chat_mode, log_message, GROUP_MESSAGES, LAST_MENTION, save_last_mention
 from handlers.report_parser import parse_report, save_report_to_sheet
 from handlers.report_docx_handler import generate_and_send_docx
 from google.oauth2.service_account import Credentials
@@ -171,6 +171,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
             "chat_id": chat_id,
             "message_id": update.message.message_id
         }
+        save_last_mention(LAST_MENTION)
         await context.bot.send_message(
             chat_id=config.get('my_user_id'),
             text=f"📣 멘션/호출 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}\n\n답변하려면: /reply [내용]"
@@ -201,6 +202,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
             question = f"다음 대화를 한국어로 요약해주세요:\n{history}"
         mode = get_chat_mode(chat_id)
         await update.message.reply_text("🤖 AI가 답변 중입니다...")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         answer = await loop.run_in_executor(None, ask_claude, question, chat_id, user_id, user_name, thread_id, mode)
         await update.message.reply_text(f"🤖 AI 답변\n\n{answer}")

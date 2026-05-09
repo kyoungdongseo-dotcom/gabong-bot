@@ -7,32 +7,20 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message_reaction:
         return
 
-    # ✅ 스티커 사용자: 나 + 서무 2명만
-    AUTHORIZED_USERS = [97057565, 754270008]
+    AUTHORIZED_USERS = config.get('reaction_authorized_users', [])
     reactor_id = update.message_reaction.user.id
 
     if reactor_id not in AUTHORIZED_USERS:
         print(f"권한 없음: {reactor_id}")
         return
 
-    # ✅ 제외 그룹 체크
     REACTION_EXCLUDE_GROUPS = config.get('reaction_exclude_groups', [-1002363981206])
     source_group_id = update.message_reaction.chat.id
     if source_group_id in REACTION_EXCLUDE_GROUPS:
         print(f"제외 그룹에서의 반응 무시: {source_group_id}")
         return
 
-    # ✅ 본인 글에 본인이 스티커 붙이면 무시
-    try:
-        msg = await context.bot.get_message(
-            chat_id=source_group_id,
-            message_id=update.message_reaction.message_id
-        )
-        if msg and msg.from_user and msg.from_user.id == reactor_id:
-            print(f"본인 글에 본인 반응 무시: {reactor_id}")
-            return
-    except Exception as e:
-        print(f"메시지 조회 오류 (무시): {e}")
+    # Bot API는 메시지 조회를 지원하지 않으므로 본인 글 체크 생략
 
     REACTION_TOPICS = config.get('reaction_topics')
     REPLY_REACTIONS = config.get('reply_reactions')

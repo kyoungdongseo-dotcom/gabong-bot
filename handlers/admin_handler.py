@@ -44,23 +44,34 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif query.data == "admin_reminders":
             try:
-                from utils import load_reminders
-                reminders = load_reminders()
-            except:
+                from database import get_reminders
+                reminders = get_reminders()
+            except Exception:
                 reminders = []
             if not reminders:
                 text = "⏰ 등록된 리마인더 없음"
             else:
-                items = ["⏰ 등록된 리마인더 목록\n"]
+                items = [f"⏰ 등록된 리마인더 목록 ({len(reminders)}개)\n"]
                 for i, r in enumerate(reminders, 1):
-                    days = r.get("days_display", "")
-                    time = r.get("time", "")
-                    msg = r.get("message", "")[:50]
+                    r_type = r.get("type", "")
+                    time_str = r.get("time", "")
+                    msg = (r.get("message") or "")[:40]
                     rid = r.get("id", "")
-                    dest = r.get("destination", "")
-                    items.append(f"{i}. {days} {time} [{rid}]")
+                    dow = r.get("day_of_week") or ""
+                    dom = r.get("day_of_month") or ""
+                    if r_type == "daily":
+                        label = f"매일 {time_str}"
+                    elif r_type in ("weekly", "biweekly"):
+                        prefix = "2주마다" if r_type == "biweekly" else "매주"
+                        label = f"{prefix} {dow} {time_str}"
+                    elif r_type == "monthly":
+                        label = f"매월 {dom}일 {time_str}"
+                    elif r_type.startswith("broadcast_"):
+                        label = f"[전체] {r_type.replace('broadcast_', '')} {time_str}"
+                    else:
+                        label = f"{r_type} {time_str}"
+                    items.append(f"{i}. [{rid}] {label}")
                     items.append(f"   {msg}")
-                    items.append(f"   {dest}")
                 text = "\n".join(items)
 
         elif query.data == "admin_stats":
@@ -96,11 +107,18 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             KST = pytz.timezone('Asia/Seoul')
             now = datetime.datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
             try:
-                from utils import load_reminders
-                reminders = load_reminders()
-            except:
+                from database import get_reminders
+                reminders = get_reminders()
+            except Exception:
                 reminders = []
-            text = f"⚙️ 봇 상태\n\n🟢 Railway 배포: 정상\n🕐 현재 시간: {now}\n⏰ 리마인더: {len(reminders)}개 등록\n👥 관리 그룹: 13개"
+            group_count = len(config.get('broadcast_groups', []))
+            text = (
+                f"⚙️ 봇 상태\n\n"
+                f"🟢 Oracle Cloud 서버: 정상\n"
+                f"🕐 현재 시간: {now}\n"
+                f"⏰ 리마인더: {len(reminders)}개 등록\n"
+                f"👥 관리 그룹: {group_count}개"
+            )
 
     except Exception as e:
         print(f"[ADMIN] 콜백 오류: {e}")

@@ -286,10 +286,32 @@ async def check_changes(app):
                 print("[Sheets] check_changes 태스크 종료")
                 return
 
-# 런타임 데이터 (임시로 여기 둠, 나중에 별도 모듈로)
+# 런타임 데이터
 CHAT_HISTORY = {}
 GROUP_MESSAGES = {}
-LAST_MENTION = {}
+
+_LAST_MENTION_FILE = './data/last_mention.json'
+
+def _load_last_mention() -> dict:
+    os.makedirs('./data', exist_ok=True)
+    if os.path.exists(_LAST_MENTION_FILE):
+        try:
+            with open(_LAST_MENTION_FILE, 'r') as f:
+                raw = json.load(f)
+            return {int(k): v for k, v in raw.items()}
+        except Exception as e:
+            print(f"[LAST_MENTION] 로드 오류: {e}")
+    return {}
+
+def save_last_mention(data: dict):
+    os.makedirs('./data', exist_ok=True)
+    try:
+        with open(_LAST_MENTION_FILE, 'w') as f:
+            json.dump({str(k): v for k, v in data.items()}, f)
+    except Exception as e:
+        print(f"[LAST_MENTION] 저장 오류: {e}")
+
+LAST_MENTION = _load_last_mention()
 scheduler = AsyncIOScheduler()
 
 def get_config():

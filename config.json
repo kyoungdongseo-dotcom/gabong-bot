@@ -162,9 +162,9 @@
   ],
   "spreadsheet_id": "1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4",
   "weekly_schedule_sheet_id": "1X5NZjOd92wv1kM5i4pKsaH4ztHGZVuDvvk1mBpJQaOs",
-  "cache_file": "/data/sheet_cache.json",
-  "reminders_file": "/data/reminders.json",
-  "database_file": "/data/bot_data.db",
+  "cache_file": "./data/sheet_cache.json",
+  "reminders_file": "./data/reminders.json",
+  "database_file": "./data/bot_data.db",
   "weekly_report_day": "mon",
   "weekly_report_time": "08:00",
   "role_prompt_modes": {

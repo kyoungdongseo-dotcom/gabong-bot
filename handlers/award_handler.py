@@ -28,50 +28,82 @@ AWARD_GROUP_ID = -1002777848839
 AWARD_TOPIC_ID = 3553
 AWARD_RECIPIENT_ID = 754270008
 
-HEADERS = ['등록일시', '지역', '지부명', '보고제목', '행사장소', '행사일시',
-           '수여자', '수상자', '수상내용', '보고자', '사진링크']
+HEADERS = ['등록일시', '지역', '지부', '수상명', '수상일시', '장소',
+           '수여자', '수상자', '수상내용', '사진링크']
 
 
-# ── 파싱 ─────────────────────────────────────────────────────────────────────
+# ── 파싱 헬퍼 ──────────────────────────────────────────────────────────────────
+
+_FIELD_ALIASES = [
+    (re.compile(r'수상명|보고제목'), '수상명'),
+    (re.compile(r'수상일시|행사일시|일시|일자|날짜'), '수상일시'),
+    (re.compile(r'수여자|시상자'), '수여자'),
+    (re.compile(r'수상자'), '수상자'),
+    (re.compile(r'수상내용|수상내역'), '수상내용'),
+    (re.compile(r'행사장소|장소'), '장소'),
+]
+REQUIRED_FIELDS = {'수상명', '수상일시', '수상자'}
+
+
+def _strip_emoji(text: str) -> str:
+    text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)
+    text = re.sub(r'[☀-➿︀-️​-‍■-◿←-⇿]', '', text)
+    text = re.sub(r'^[\s\*•\-]+', '', text)
+    return text.strip()
+
+
+def _match_field(key_raw: str) -> str | None:
+    key = re.sub(r'\s+', '', key_raw)
+    for pattern, field in _FIELD_ALIASES:
+        if pattern.fullmatch(key):
+            return field
+    return None
+
+
+def _split_kv(line: str) -> tuple[str, str] | None:
+    m = re.match(r'^(.+?)\s*[：:]\s*(.*)', line)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None
+
 
 def parse_award_caption(caption: str) -> dict | None:
-    """캡션 파싱. '수상보고서' 없거나 파싱 실패 시 None 반환."""
-    if not caption or '수상보고서' not in caption:
+    if not caption:
         return None
-
+    if '수상' not in caption or '보고' not in caption:
+        return None
     lines = [l.strip() for l in caption.strip().splitlines() if l.strip()]
     if not lines:
         return None
-
-    # 첫 줄: "[지역] [지부명] 수상보고서"
-    지역, 지부명 = '', ''
-    m = re.match(r'^(.+?)\s+(.+?지부)\s+수상보고서', lines[0])
-    if m:
-        지역 = m.group(1).strip()
-        지부명 = m.group(2).strip()
-
-    data = {
+    first = _strip_emoji(lines[0])
+    first = re.sub(r'\s*(수상보고서|수상보고|보고서|보고)\s*', '', first).strip()
+    parts = first.split()
+    지역 = parts[0] if len(parts) >= 1 else ''
+    지부 = parts[1] if len(parts) >= 2 else ''
+    data: dict = {
         '등록일시': datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S'),
-        '지역': 지역,
-        '지부명': 지부명,
-        '보고제목': '',
-        '행사장소': '',
-        '행사일시': '',
-        '수여자': '',
-        '수상자': '',
-        '수상내용': '',
-        '보고자': '',
-        '사진링크': '',
+        '지역': 지역, '지부': 지부, '수상명': '', '수상일시': '',
+        '장소': '', '수여자': '', '수상자': '', '수상내용': '', '사진링크': '',
     }
-
-    FIELD_KEYS = {'보고제목', '행사장소', '행사일시', '수여자', '수상자', '수상내용', '보고자'}
+    current_field = None
     for line in lines[1:]:
-        if ':' in line:
-            key, _, val = line.partition(':')
-            key = key.strip()
-            if key in FIELD_KEYS:
-                data[key] = val.strip()
-
+        clean = _strip_emoji(line)
+        if not clean:
+            continue
+        kv = _split_kv(clean)
+        if kv:
+            key_raw, val = kv
+            field = _match_field(key_raw)
+            if field is not None:
+                data[field] = val
+                current_field = field
+            elif current_field:
+                data[current_field] += ' ' + clean
+        elif current_field:
+            data[current_field] += '\n' + clean
+    missing = [f for f in REQUIRED_FIELDS if not data.get(f)]
+    if missing:
+        data['_missing'] = missing
     return data
 
 
@@ -86,7 +118,7 @@ def _get_sheet_service():
 def _ensure_header(service):
     result = service.spreadsheets().values().get(
         spreadsheetId=AWARD_SPREADSHEET_ID,
-        range=f'{AWARD_SHEET_NAME}!A1:K1'
+        range=f'{AWARD_SHEET_NAME}!A1:J1'
     ).execute()
     existing = result.get('values', [[]])
     if not existing or not any(existing[0]):
@@ -110,7 +142,7 @@ def save_to_sheet(data: dict) -> bool:
             insertDataOption='INSERT_ROWS',
             body={'values': [row]}
         ).execute()
-        print(f"✅ 수상보고서 저장 완료: {data.get('보고제목')}")
+        print(f"✅ 수상보고서 저장 완료: {data.get('수상명')}")
         return True
     except Exception as e:
         print(f"❌ 수상보고서 저장 오류: {e}")
@@ -183,7 +215,7 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
         title_p = doc.add_paragraph()
         title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_run = title_p.add_run(
-            f"{data.get('지역', '')} {data.get('지부명', '')}\n자원봉사 수상보고서"
+            f"{data.get('지역', '')} {data.get('지부', '')}\n자원봉사 수상보고서"
         )
         title_run.bold = True
         title_run.font.size = Pt(16)
@@ -198,18 +230,18 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
         table.columns[2].width = Cm(3)
         table.columns[3].width = Cm(4.5)
 
-        # 행 1: 보고제목 (값 3열 병합)
+        # 행 1: 수상명 (값 3열 병합)
         r0 = table.add_row()
-        _label(r0.cells[0], '보고제목')
+        _label(r0.cells[0], '수상명')
         r0.cells[1].merge(r0.cells[3])
-        _value(r0.cells[1], data.get('보고제목'))
+        _value(r0.cells[1], data.get('수상명'))
 
-        # 행 2: 행사장소 | 행사일시
+        # 행 2: 장소 | 수상일시
         r1 = table.add_row()
-        _label(r1.cells[0], '행사장소')
-        _value(r1.cells[1], data.get('행사장소'))
-        _label(r1.cells[2], '행사일시')
-        _value(r1.cells[3], data.get('행사일시'))
+        _label(r1.cells[0], '장소')
+        _value(r1.cells[1], data.get('장소'))
+        _label(r1.cells[2], '수상일시')
+        _value(r1.cells[3], data.get('수상일시'))
 
         # 행 3: 수여자 | 수상자
         r2 = table.add_row()
@@ -255,12 +287,12 @@ def generate_docx(data: dict, photo_path: str | None, output_path: str) -> bool:
 
         date_p = doc.add_paragraph()
         date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        date_p.add_run(data.get('행사일시', '')).font.size = Pt(11)
+        date_p.add_run(data.get('수상일시', '')).font.size = Pt(11)
 
         reporter_p = doc.add_paragraph()
         reporter_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         reporter_run = reporter_p.add_run(
-            f"보고자: {data.get('지부명', '')} {data.get('보고자', '')}"
+            f"{data.get('지역', '')} {data.get('지부', '')}"
         )
         reporter_run.font.size = Pt(11)
 
@@ -288,7 +320,7 @@ async def handle_award_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     caption = update.message.caption or ''
-    if '수상보고서' not in caption:
+    if '수상' not in caption or '보고' not in caption:
         return
 
     data = parse_award_caption(caption)
@@ -296,6 +328,13 @@ async def handle_award_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(
             chat_id=AWARD_RECIPIENT_ID,
             text=f"⚠️ 수상보고서 파싱 실패\n캡션:\n{caption[:300]}"
+        )
+        return
+    if '_missing' in data:
+        missing_str = ', '.join(data['_missing'])
+        await context.bot.send_message(
+            chat_id=AWARD_RECIPIENT_ID,
+            text=f"⚠️ 수상보고서 필수 항목 누락: {missing_str}\n캡션:\n{caption[:300]}"
         )
         return
 
@@ -325,9 +364,9 @@ async def handle_award_message(update: Update, context: ContextTypes.DEFAULT_TYP
     # DM: 텍스트 요약
     summary = (
         f"✅ 수상보고서 자동 저장 완료\n"
-        f"📌 {data.get('지역')} {data.get('지부명')}\n"
-        f"🏆 {data.get('보고제목')}\n"
-        f"📅 {data.get('행사일시')}"
+        f"📌 {data.get('지역')} {data.get('지부')}\n"
+        f"🏆 {data.get('수상명')}\n"
+        f"📅 {data.get('수상일시')}"
     )
     if not sheet_ok:
         summary += "\n⚠️ 스프레드시트 저장 실패"
@@ -337,7 +376,7 @@ async def handle_award_message(update: Update, context: ContextTypes.DEFAULT_TYP
     # DM: Word 파일
     if docx_ok and os.path.exists(output_path):
         filename = (
-            f"{data.get('지역', '')}_{data.get('지부명', '')}_수상보고서"
+            f"{data.get('지역', '')}_{data.get('지부', '')}_수상보고서"
             f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
         ).replace(' ', '_').replace('/', '-')
         try:

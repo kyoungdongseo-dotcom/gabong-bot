@@ -111,6 +111,12 @@ def _startup_checks():
 async def post_init(app):
     _startup_checks()
     init_database()
+    # gabong.db 신규 테이블 명시적 초기화 (utils 모듈 충돌 회피)
+    try:
+        from database import init_db as _init_gabong_db
+        _init_gabong_db()
+    except Exception as e:
+        print(f"⚠️ gabong.db init_db() 실패: {e}")
     loop = asyncio.get_running_loop()
     scheduler.configure(event_loop=loop)
     scheduler.start()

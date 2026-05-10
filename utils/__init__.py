@@ -66,6 +66,12 @@ def init_database():
             """
         )
         conn.commit()
+    # gabong.db 의 신규 테이블도 함께 초기화 (보고서 PENDING/recent_submissions/report_log)
+    try:
+        from database import init_db as _init_gabong_db
+        _init_gabong_db()
+    except Exception as e:
+        print(f"⚠️ gabong.db 초기화 실패: {e}")
 
 
 def log_message(chat_id, user_id, user_name, role, text, thread_id=None, timestamp=None):

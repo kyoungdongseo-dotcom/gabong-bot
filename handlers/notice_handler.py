@@ -6,39 +6,62 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
     msg = """안녕하세요! GAbong Bot입니다 🤖
-📢 공지
+
+📋 도움말
+/help - 보고서 형식 안내 (인라인 버튼)
+/myreports - 내 보고서 제출 이력 (30일)
+
+━━━━━━━━━━━━━━━━━
+
+📊 관리자 전용 — 리포트/점검
+/weekly_ops - 주간 운영 리포트
+/report_stats - 월간 보고서 통계
+/status - 시스템 상태
+/backup - 즉시 백업
+/admin - 관리자 대시보드
+
+📢 관리자 전용 — 공지
 /notice [내용] - 총회봉교부 공지
 /broadcast [내용] - 13개 그룹 일괄 공지
 
-📅 주간 일정
+📅 관리자 전용 — 일정
 /schedule - 이번 주 봉사 일정
-/weekly_report - 주간 일정 상세 보고
+/weekly_report - 주간 일정 상세
+/report - 주간 보고서 분석
+/monthly - 월간 통계
 
-🤖 AI 비서
+🤖 관리자 전용 — AI 비서
 /ai [질문] - AI에게 질문
 /summary - 대화 요약
 /reset - 대화 초기화
+/mode [모드] - AI 모드 변경
 /reply [내용] - 마지막 멘션에 답변
+
+━━━━━━━━━━━━━━━━━
 
 ⭐공지 🔥교통 ❤홍보 👍대협 🙏소통 💯사공 👌진행
 
 ⏰ 리마인더 (총회봉교부)
-/remind_daily HH:MM [내용] - 매일
-/remind_weekly 월,수,금 HH:MM [내용] - 매주
-/remind_biweekly 월 HH:MM [내용] - 2주에 1번
-/remind_monthly 일자 HH:MM [내용] - 매월
+/remind_daily HH:MM [내용]
+/remind_weekly 월,수,금 HH:MM [내용]
+/remind_biweekly 월 HH:MM [내용]
+/remind_monthly 일자 HH:MM [내용]
 
 ⏰ 리마인더 (13개 그룹 전체)
-/broadcast_remind_daily HH:MM [내용] - 매일
-/broadcast_remind_weekly 월,수,금 HH:MM [내용] - 매주
-/broadcast_remind_biweekly 월 HH:MM [내용] - 2주에 1번
-/broadcast_remind_monthly 일자 HH:MM [내용] - 매월
+/broadcast_remind_daily HH:MM [내용]
+/broadcast_remind_weekly 월,수,금 HH:MM [내용]
+/broadcast_remind_biweekly 월 HH:MM [내용]
+/broadcast_remind_monthly 일자 HH:MM [내용]
 
 /my_reminders - 리마인더 목록
-/delete_reminder ID - 리마인더 삭제
+/delete_reminder [ID] - 리마인더 삭제
 
-🎛 관리자 전용
-/admin - 관리자 대시보드"""
+📋 보고서 자동 처리
+- 봉사보고서: 사진 + 형식 텍스트 → 자동 시트/Word 저장
+- 수상보고서: 토픽 3553
+- MOU 보고서: 토픽 3225
+- 사진 1~10장 누적 가능
+- /help 로 형식 확인"""
     await update.message.reply_text(msg)
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -63,30 +86,6 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"📣 공지\n\n{text}"
         )
         await update.message.reply_text("✅ 공지가 발송되었습니다.")
-    except Exception as e:
-        await update.message.reply_text(f"발송 실패: {e}")
-
-async def notice_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.photo:
-        return
-    ADMIN_IDS = config.get('admin_ids')
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    GROUP_ID = config.get('group_id')
-    TOPIC_ID = config.get('topic_id')
-
-    caption = update.message.caption or ""
-    caption = caption.replace('/notice', '').strip()
-
-    try:
-        await context.bot.send_photo(
-            chat_id=GROUP_ID,
-            message_thread_id=TOPIC_ID,
-            photo=update.message.photo[-1].file_id,
-            caption=f"📣 공지\n\n{caption}" if caption else "📣 공지"
-        )
-        await update.message.reply_text("✅ 사진 공지가 발송되었습니다.")
     except Exception as e:
         await update.message.reply_text(f"발송 실패: {e}")
 

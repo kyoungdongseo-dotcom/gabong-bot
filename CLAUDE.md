@@ -256,10 +256,11 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 
 ### 📢 일반 관리 (admin_ids 6명)
 - `/report`, `/monthly` — 보고서 분석
-- `/notice`, `/broadcast` — ⚠️ 권한 미확인 (별도 분석 필요)
-- `/reply` — ⚠️ 권한 미확인
-- `/sheet` — ⚠️ 권한 미확인
-- `/add_group` — 신규 그룹 화이트리스트 추가
+- `/notice` — 총회봉교부 단일 토픽 공지 ✅ 안전
+- `/broadcast` — 13개 그룹 일괄 공지 ✅ 안전
+- `/reply` — ⚠️ 권한 미확인 (다음 분석 후보)
+- `/sheet` — ⚠️ 권한 미확인 (다음 분석 후보)
+- `/add_group` — 신규 그룹 화이트리스트 추가 ✅
 
 ### 🤖 AI 호출 (admin_ids 6명) — **모든 진입점**
 - `/ai`, `/summary`, `/reset` — `check_admin` (utils.permissions)
@@ -290,3 +291,20 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - 봇 멘션 / `/ai` 비admin 호출: **silent ignore** (스팸 방지)
 - `/weekly_ops` 등 명시적 명령어 비admin: "❌ 관리자만 사용 가능합니다"
 - 그룹 화이트리스트 외: "❌ 이 그룹에서는 ... 사용할 수 없습니다"
+
+### 🔬 알려진 이슈 / 다음 분석 대상
+
+**알려진 이슈**:
+- `notice_handler.broadcast_photo` — PHOTO+CAPTION 핸들러로 등록되지만
+  같은 group=0 의 `message_handler.handle_photo_messages` 가 먼저 매칭 →
+  **사실상 dead code** (작동 안 함). 사진+`/broadcast` 는 현재 작동 안 됨.
+  → 별도 작업으로 group 분리 또는 명령어 형태로 변경 필요.
+
+**다음 분석 후보** (우선순위 순):
+1. `/sheet` (sheet_plugin) — 시트 데이터 노출 여부
+2. `/reply` (reply_plugin) — 답글 권한
+3. `mention_keywords` 자동 알림 — 누구나 트리거 가능 (도배 위험)
+4. `my_keywords` 메인 관리자 DM 알림 — 누구나 트리거 가능
+
+**제거된 dead code**:
+- `notice_handler.notice_photo` — plugin 등록 없음, 한 번도 호출 안 됨

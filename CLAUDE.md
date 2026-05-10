@@ -258,9 +258,12 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - `/report`, `/monthly` — 보고서 분석
 - `/notice` — 총회봉교부 단일 토픽 공지 ✅ 안전
 - `/broadcast` — 13개 그룹 일괄 공지 ✅ 안전
-- `/reply` — ⚠️ 권한 미확인 (다음 분석 후보)
-- `/sheet` — ⚠️ 권한 미확인 (다음 분석 후보)
+- `/sheet` — 시트 데이터 → 그룹 발송 ✅ 안전 (admin 6명)
 - `/add_group` — 신규 그룹 화이트리스트 추가 ✅
+
+### 🎯 메인 관리자 전용 (my_user_id 1명)
+- `/reply` — 마지막 멘션 답변 ✅ 매우 안전 (97057565만)
+  LAST_MENTION 이 my_user_id 키 단일 → 다른 admin 호출해도 동작 안 함
 
 ### 🤖 AI 호출 (admin_ids 6명) — **모든 진입점**
 - `/ai`, `/summary`, `/reset` — `check_admin` (utils.permissions)
@@ -301,10 +304,13 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   → 별도 작업으로 group 분리 또는 명령어 형태로 변경 필요.
 
 **다음 분석 후보** (우선순위 순):
-1. `/sheet` (sheet_plugin) — 시트 데이터 노출 여부
-2. `/reply` (reply_plugin) — 답글 권한
-3. `mention_keywords` 자동 알림 — 누구나 트리거 가능 (도배 위험)
-4. `my_keywords` 메인 관리자 DM 알림 — 누구나 트리거 가능
+1. `mention_keywords` 자동 알림 — 누구나 트리거 가능 (도배 위험)
+2. `my_keywords` 메인 관리자 DM 알림 — 누구나 트리거 가능
+3. 보고서 자동 처리 권한 — 도메인 제약만으로 보호되는 케이스 검토
+4. `broadcast_photo` 작동 회복 (group 분리 또는 명령어화)
+
+**검토 완료** (안전 확인):
+- /sheet (admin 6명), /reply (메인 관리자 1명) — 변경 불필요
 
 **제거된 dead code**:
 - `notice_handler.notice_photo` — plugin 등록 없음, 한 번도 호출 안 됨

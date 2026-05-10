@@ -649,6 +649,12 @@ async def _process_award_album(context, media_group_id: str):
                               origin=pending.get('origin', origin))
         return
 
+    # 앨범에서 캡션 키워드 부분 일치 안내
+    if caption:
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        if is_partial_match('award', caption):
+            await maybe_send_format_help(context.bot, origin, user_id, 'award')
+
     if caption and '수상' in caption and '보고' in caption:
         log_report_stage('award', 'received', 'ok', user_id=user_id,
                          chat_id=origin.get('chat_id'),
@@ -729,6 +735,12 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
             AWARD_MEDIA_CACHE[media_group_id]['caption'] = caption
         return
 
+    # 형식 안내: 사진+캡션이고 키워드 부분 일치 시 (1일 1회)
+    if caption:
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        if is_partial_match('award', caption):
+            await maybe_send_format_help(context.bot, origin, user_id, 'award')
+
     # 케이스 A/B: 단일 사진+캡션 → 즉시 처리
     if caption and '수상' in caption and '보고' in caption:
         log_report_stage('award', 'received', 'ok', user_id=user_id,
@@ -793,6 +805,12 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text
     if '수상' not in text or '보고' not in text:
+        # 부분 일치면 형식 안내 (1일 1회)
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        from handlers.report_base import make_origin as _mo
+        if is_partial_match('award', text):
+            await maybe_send_format_help(context.bot, _mo(update),
+                                          update.effective_user.id, 'award')
         return
 
     from handlers.report_base import make_origin, reply_to_origin

@@ -627,6 +627,12 @@ async def _process_mou_album(context, media_group_id: str):
                             origin=pending.get('origin', origin))
         return
 
+    # 앨범 캡션 형식 안내
+    if caption:
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        if is_partial_match('mou', caption):
+            await maybe_send_format_help(context.bot, origin, user_id, 'mou')
+
     if caption and _has_mou_keywords(caption):
         log_report_stage('mou', 'received', 'ok', user_id=user_id,
                          chat_id=origin.get('chat_id'),
@@ -706,6 +712,12 @@ async def handle_mou_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             MOU_MEDIA_CACHE[media_group_id]['caption'] = caption
         return
 
+    # 형식 안내 (부분 키워드 일치 + 1일 1회)
+    if caption:
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        if is_partial_match('mou', caption):
+            await maybe_send_format_help(context.bot, origin, user_id, 'mou')
+
     # 케이스 A/B: 단일 사진+캡션 → 즉시 처리
     if caption and _has_mou_keywords(caption):
         log_report_stage('mou', 'received', 'ok', user_id=user_id,
@@ -770,6 +782,12 @@ async def handle_mou_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text
     if not _has_mou_keywords(text):
+        # 부분 일치면 형식 안내 (1일 1회)
+        from handlers.help_handler import is_partial_match, maybe_send_format_help
+        from handlers.report_base import make_origin as _mo
+        if is_partial_match('mou', text):
+            await maybe_send_format_help(context.bot, _mo(update),
+                                          update.effective_user.id, 'mou')
         return
 
     from handlers.report_base import make_origin, reply_to_origin

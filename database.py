@@ -122,6 +122,16 @@ def init_db():
         ON report_log(report_type, stage, status)
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS format_help_sent (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            report_type TEXT NOT NULL,
+            sent_at     REAL NOT NULL,
+            UNIQUE(user_id, report_type)
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("✅ DB 초기화 완료")
@@ -409,3 +419,86 @@ def cleanup_report_log(max_age_days: int = 30):
         conn.close()
     except Exception:
         pass
+
+
+def get_user_reports(user_id: int, days: int = 30) -> list:
+    """보고자별 최근 제출 이력 (보고서 단위, 최신순)"""
+    try:
+        conn = get_conn()
+        threshold = (datetime.now().timestamp() - days * 86400)
+        threshold_str = datetime.fromtimestamp(threshold).strftime('%Y-%m-%d %H:%M:%S')
+        rows = conn.execute("""
+            SELECT report_type, message_id, status, detail, created_at
+            FROM report_log
+            WHERE user_id = ?
+              AND stage = 'received'
+              AND created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT 100
+        """, (user_id, threshold_str)).fetchall()
+        result = []
+        for r in rows:
+            # 같은 user/type/message_id 의 finalize 결과 조회
+            final = conn.execute("""
+                SELECT stage, status, detail FROM report_log
+                WHERE user_id = ? AND report_type = ?
+                  AND created_at >= ?
+                  AND stage IN ('sheet_saved', 'finalize', 'reporter_ack_sent')
+                ORDER BY id DESC LIMIT 5
+            """, (user_id, r['report_type'], r['created_at'])).fetchall()
+            stages = {f['stage']: f['status'] for f in final}
+            if stages.get('finalize') == 'fail':
+                outcome = 'fail'
+            elif stages.get('sheet_saved') == 'ok':
+                outcome = 'ok'
+            elif stages.get('sheet_saved') == 'fail':
+                outcome = 'sheet_fail'
+            elif stages.get('reporter_ack_sent') == 'ok':
+                outcome = 'partial'
+            else:
+                outcome = 'unknown'
+            result.append({
+                'report_type': r['report_type'],
+                'detail': r['detail'] or '',
+                'created_at': r['created_at'],
+                'outcome': outcome,
+            })
+        conn.close()
+        return result
+    except Exception as e:
+        print(f"⚠️ get_user_reports 오류: {e}")
+        return []
+
+
+# ── 형식 안내 1일 1회 추적 ────────────────────────────────────────────────────
+
+def should_send_format_help(user_id: int, report_type: str,
+                            cooldown_hours: int = 24) -> bool:
+    """24시간 내 같은 user/type 안내 보낸 적 없으면 True."""
+    try:
+        conn = get_conn()
+        threshold = datetime.now().timestamp() - cooldown_hours * 3600
+        row = conn.execute("""
+            SELECT sent_at FROM format_help_sent
+            WHERE user_id = ? AND report_type = ?
+        """, (user_id, report_type)).fetchone()
+        conn.close()
+        if row is None:
+            return True
+        return row['sent_at'] < threshold
+    except Exception:
+        return True
+
+
+def mark_format_help_sent(user_id: int, report_type: str):
+    try:
+        conn = get_conn()
+        conn.execute("""
+            INSERT OR REPLACE INTO format_help_sent
+            (user_id, report_type, sent_at)
+            VALUES (?, ?, ?)
+        """, (user_id, report_type, datetime.now().timestamp()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ mark_format_help_sent 오류: {e}")

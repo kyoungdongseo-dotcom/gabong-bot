@@ -397,6 +397,13 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if chat_id == REPORT_GROUP_ID and thread_id not in EXCLUDED_TOPICS:
         report = parse_report(text)
+        # 부분 키워드 일치인데 parse 실패 시 형식 안내 (1일 1회)
+        if not report:
+            from handlers.help_handler import is_partial_match, maybe_send_format_help
+            from handlers.report_base import make_origin as _mo
+            if is_partial_match('service', text):
+                await maybe_send_format_help(context.bot, _mo(update),
+                                              user_id, 'service')
         if report:
             from handlers.report_base import make_origin, reply_to_origin
             from database import log_report_stage

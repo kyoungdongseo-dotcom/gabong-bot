@@ -139,6 +139,8 @@ async def post_init(app):
         BotCommand("backup", "즉시 DB 백업"),
         BotCommand("status", "봇 상태 확인"),
         BotCommand("report_stats", "월간 보고서 통계"),
+        BotCommand("help", "보고서 형식 안내"),
+        BotCommand("myreports", "본인 제출 이력 (30일)"),
     ])
     print("✅ 봇 명령어 등록 완료")
 

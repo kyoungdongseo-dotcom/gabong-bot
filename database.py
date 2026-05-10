@@ -98,6 +98,20 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recent_sub_type
         ON recent_submissions(report_type, submitted_at)
     """)
+    # dedup hash 조회용 인덱스
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_recent_sub_hash
+        ON recent_submissions(report_type, submission_hash, submitted_at)
+    """)
+    # user_id 컬럼 추가 마이그레이션 (idempotent)
+    try:
+        cols = c.execute("PRAGMA table_info(recent_submissions)").fetchall()
+        col_names = [col[1] for col in cols]
+        if 'user_id' not in col_names:
+            c.execute("ALTER TABLE recent_submissions ADD COLUMN user_id INTEGER")
+            print("✅ recent_submissions.user_id 컬럼 추가됨 (마이그레이션)")
+    except Exception as e:
+        print(f"⚠️ recent_submissions user_id 마이그레이션 실패: {e}")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS report_log (
@@ -331,19 +345,23 @@ def cleanup_pending_photos_db(max_age_sec: float = 300):
 
 # ── 중복 제출 감지 ─────────────────────────────────────────────────────────────
 
-def record_submission(report_type: str, submission_hash: str, summary: str = ''):
+def record_submission(report_type: str, submission_hash: str,
+                      summary: str = '', user_id: int = None):
+    """제출 기록. user_id 도 저장하여 같은 사람 여부 판단 가능."""
     conn = get_conn()
     conn.execute("""
-        INSERT INTO recent_submissions (report_type, submission_hash, summary, submitted_at)
-        VALUES (?, ?, ?, ?)
-    """, (report_type, submission_hash, summary, datetime.now().timestamp()))
+        INSERT INTO recent_submissions
+        (report_type, submission_hash, summary, submitted_at, user_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (report_type, submission_hash, summary, datetime.now().timestamp(), user_id))
     conn.commit()
     conn.close()
 
 
 def find_recent_submission(report_type: str, submission_hash: str,
                            window_sec: float = 600) -> dict | None:
-    """최근 N초 내 동일 hash 제출이 있으면 반환"""
+    """최근 N초 내 동일 hash 제출이 있으면 반환.
+    반환 dict 에 user_id 포함 → 호출 측에서 같은 사람 여부 판단."""
     conn = get_conn()
     threshold = datetime.now().timestamp() - window_sec
     row = conn.execute("""

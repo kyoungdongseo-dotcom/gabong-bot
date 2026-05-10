@@ -49,11 +49,10 @@ def get_sheet_service():
 
 async def finalize_report(context, report: dict, photos: list, source: str = "",
                           origin: dict = None):
-    """봉사보고서 트랜잭션: 사진 → Word → 시트 → DM 전송 → 보고자 reply.
-    D-1 엄격: 사진 1장이라도 실패하면 처리 차단."""
+    """봉사보고서 트랜잭션 + dedup 체크 (옵션 3)."""
     from handlers.report_base import (
         download_photos_batch, with_sheet_retry, send_to_recipient as base_send,
-        notify_admin as base_notify, reply_to_origin,
+        notify_admin as base_notify, reply_to_origin, check_duplicate_and_warn,
     )
     from handlers.report_docx_handler import generate_docx
     from database import log_report_stage, record_submission
@@ -68,6 +67,11 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
     output_path = None
     tmp_files = []
     try:
+        sub_hash, _was_dup = await check_duplicate_and_warn(
+            context, report_type='service', data=report,
+            origin=origin, recipient_id=DOCX_RECIPIENT_ID
+        )
+
         loop = asyncio.get_running_loop()
 
         # ── 1. 사진 다운로드 (D-1 엄격) ────────────────────────────────
@@ -186,8 +190,7 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
                 except Exception: pass
 
         try:
-            sub_hash = f"{report.get('지파명', '')}|{report.get('교회명', '')}|{report.get('활동명', '')}"
-            record_submission('service', sub_hash, summary_dm[:200])
+            record_submission('service', sub_hash, summary_dm[:200], user_id=user_id)
         except Exception: pass
 
         # ── 6. 보고자 reply ────────────────────────────────────────────

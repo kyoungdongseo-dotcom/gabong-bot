@@ -410,10 +410,12 @@ def _cleanup_award_photos():
 
 async def _finalize_award(context, data: dict, photos: list, *, origin: dict = None):
     """트랜잭션: 사진 → Word → 시트 → DM 전송 → 보고자 reply.
-    D-1 엄격: 사진 1장이라도 실패하면 처리 차단."""
+    D-1 엄격: 사진 1장이라도 실패하면 처리 차단.
+    dedup: 처리 시작 시 중복 의심 알림 (옵션 3 — 강제 진행)."""
     from handlers.report_base import (
         download_photos_batch, send_to_recipient as base_send,
         notify_admin as base_notify, with_sheet_retry, reply_to_origin,
+        check_duplicate_and_warn,
     )
     from database import log_report_stage, record_submission
     if origin is None:
@@ -422,6 +424,12 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
     output_path = None
     tmp_files = []
     try:
+        # dedup 체크 (시작 시점) — 발견해도 처리는 진행 (옵션 3)
+        sub_hash, _was_dup = await check_duplicate_and_warn(
+            context, report_type='award', data=data,
+            origin=origin, recipient_id=AWARD_RECIPIENT_ID
+        )
+
         loop = asyncio.get_running_loop()
 
         # ── 1. 사진 다운로드 (D-1 엄격) ────────────────────────────────
@@ -534,10 +542,9 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
                 try: os.remove(output_path)
                 except Exception: pass
 
-        # 중복 기록
+        # 중복 기록 (강화된 hash + user_id)
         try:
-            sub_hash = f"{data.get('지부', '')}|{data.get('수상명', '')}"
-            record_submission('award', sub_hash, summary[:200])
+            record_submission('award', sub_hash, summary[:200], user_id=user_id)
         except Exception: pass
 
         # ── 6. 보고자 최종 reply ────────────────────────────────────────

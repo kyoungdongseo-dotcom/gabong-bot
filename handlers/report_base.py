@@ -401,3 +401,88 @@ def now_kst_str(fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
 
 def now_kst_filename() -> str:
     return datetime.now(KST).strftime('%Y%m%d_%H%M%S')
+
+
+# ── 중복 제출 감지 (dedup) ────────────────────────────────────────────────────
+
+def normalize_for_hash(s: str) -> str:
+    """hash 생성용 정규화: 공백 제거 + 소문자.
+    '대전 지부' vs '대전지부' 같은 표기 차이를 흡수."""
+    if not s:
+        return ''
+    return ''.join(s.split()).lower()
+
+
+def build_submission_hash(report_type: str, data: dict) -> str:
+    """보고서별 강화된 dedup hash"""
+    if report_type == 'award':
+        parts = [data.get('지부', ''), data.get('수상명', ''), data.get('수상자', '')]
+    elif report_type == 'mou':
+        parts = [data.get('지부', ''), data.get('협약명', ''), data.get('기관명', '')]
+    elif report_type == 'service':
+        parts = [
+            data.get('지파명', ''), data.get('교회명', ''),
+            data.get('활동명', ''),
+            (data.get('활동일시', '') or '')[:10],
+        ]
+    else:
+        parts = []
+    return '|'.join(normalize_for_hash(p) for p in parts)
+
+
+_REPORT_LABEL = {'award': '수상', 'mou': 'MOU', 'service': '봉사'}
+
+
+async def check_duplicate_and_warn(context, *, report_type: str, data: dict,
+                                    origin: dict, recipient_id: int) -> tuple:
+    """dedup 체크 (옵션 3: 강제 진행 + 경고).
+    Returns: (sub_hash, was_duplicate)"""
+    user_id = origin.get('user_id') if origin else None
+    sub_hash = build_submission_hash(report_type, data)
+    if not sub_hash or sub_hash.replace('|', '') == '':
+        return sub_hash, False
+
+    from database import find_recent_submission
+    existing = find_recent_submission(report_type, sub_hash, window_sec=600)
+    if not existing:
+        return sub_hash, False
+
+    same_user = bool(user_id) and existing.get('user_id') == user_id
+    minutes_ago = max(1, int((time.time() - existing.get('submitted_at', 0)) / 60))
+    label = _REPORT_LABEL.get(report_type, report_type)
+    prev_summary = (existing.get('summary') or '')[:150]
+
+    # 보고자 안내 (강/약 경고 차등)
+    if same_user:
+        boggoja_msg = (
+            f"⚠️ 중복 의심 — {minutes_ago}분 전 동일 보고서 처리됨\n"
+            f"📌 같은 분이 동일 내용 제출 ({label} 보고서)\n\n"
+            f"✅ 새 보고서가 맞으면 그대로 두세요 (정상 처리됨)\n"
+            f"❌ 잘못 보냈으면 서무에게 시트 삭제 요청"
+        )
+    else:
+        boggoja_msg = (
+            f"⚠️ 중복 의심 — {minutes_ago}분 전 다른 분이 동일 보고서 제출\n"
+            f"📌 같은 행사를 두 명이 보고했을 수 있음 ({label} 보고서)\n\n"
+            f"✅ 새 보고서가 맞으면 그대로 두세요"
+        )
+    await reply_to_origin(context.bot, origin, boggoja_msg)
+
+    # 서무 안내
+    if same_user:
+        seomu_msg = (
+            f"⚠️ 중복 의심 보고서 — 같은 사용자\n"
+            f"종류: {label}\n"
+            f"이전 ({minutes_ago}분 전): {prev_summary}\n"
+            f"💡 시트 확인 후 중복이면 삭제 권장"
+        )
+    else:
+        seomu_msg = (
+            f"⚠️ 중복 의심 보고서 — 다른 사용자\n"
+            f"종류: {label}\n"
+            f"이전 ({minutes_ago}분 전): {prev_summary}\n"
+            f"💡 같은 행사 두 사람 보고 가능성 (중복 시 시트 정리)"
+        )
+    await send_to_recipient(context.bot, recipient_id, text=seomu_msg)
+
+    return sub_hash, True

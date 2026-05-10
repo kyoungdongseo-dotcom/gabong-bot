@@ -66,7 +66,20 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
     user_id = origin.get('user_id')
     output_path = None
     tmp_files = []
+    print(f"📊 봉사 finalize 시작: photos={len(photos) if photos else 0} user={user_id} source={source}")
     try:
+        # R1.A: 사진 0장 차단 (사진 필수 정책)
+        if not photos:
+            log_report_stage('service', 'finalize', 'fail',
+                             user_id=user_id, detail='no_photos')
+            await reply_to_origin(
+                context.bot, origin,
+                "❌ 사진을 첨부하지 않으셨거나 사진 처리 중 오류가 발생했습니다.\n"
+                "📸 사진 1~10장과 함께 다시 보내주세요.\n"
+                "⚠️ 처리 차단됨 (시트 저장 안 됨)"
+            )
+            return
+
         sub_hash, _was_dup = await check_duplicate_and_warn(
             context, report_type='service', data=report,
             origin=origin, recipient_id=DOCX_RECIPIENT_ID
@@ -234,7 +247,7 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
         )
 
 async def flush_pending_report(context, key):
-    """60초 기다린 후 저장. 사진이 계속 오면 5초씩 연장 (최대 5분)"""
+    """60초 기다린 후 저장. 사진이 계속 오면 5초씩 연장 (최대 10분 — PHOTOS_TTL 일치)"""
     start = time.time()
     await asyncio.sleep(60)
     while True:
@@ -243,7 +256,7 @@ async def flush_pending_report(context, key):
             return
         last_photo = entry.get('last_photo_time', 0)
         elapsed = time.time() - start
-        if last_photo > 0 and (time.time() - last_photo) < 5 and elapsed < 300:
+        if last_photo > 0 and (time.time() - last_photo) < 5 and elapsed < 600:
             await asyncio.sleep(5)
             continue
         break
@@ -269,7 +282,15 @@ async def process_media_group(context, media_group_id: str):
     chat_id = cache.get('chat_id')
     user_id = cache.get('user_id')
     origin = cache.get('origin', {})
-    pending_key = (chat_id, user_id) if chat_id and user_id else chat_id
+
+    # F5: user_id 누락 시 처리 불가 (PENDING 매칭 깨지므로)
+    if not user_id or not chat_id:
+        print(f"⚠️ media_group user_id 누락 — 처리 불가 (mgid={media_group_id} chat={chat_id} user={user_id})")
+        cleanup_media_cache()
+        return
+
+    pending_key = (chat_id, user_id)
+    print(f"📸 album[봉사]: chat={chat_id} user={user_id} photos={len(photos)} caption={'YES' if caption else 'NO'}")
 
     from handlers.report_base import reply_to_origin
 
@@ -328,9 +349,22 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
     caption = update.message.caption or ""
     media_group_id = update.message.media_group_id
 
-    photo = update.message.photo[-1]
-    photo_file = await context.bot.get_file(photo.file_id)
-    photo_url = photo_file.file_path
+    # R3.A: 디버깅 로그
+    print(f"📸 photo[봉사]: chat={chat_id} thread={thread_id} user={user_id} "
+          f"media_group={media_group_id} caption={'YES' if caption else 'NO'}")
+
+    # R2.A: get_file 보호
+    try:
+        photo = update.message.photo[-1]
+        photo_file = await context.bot.get_file(photo.file_id)
+        photo_url = photo_file.file_path
+    except Exception as e:
+        print(f"⚠️ 봉사 get_file 실패: {e}")
+        await reply_to_origin(
+            context.bot, origin,
+            "⚠️ 사진 처리 실패 — 사진을 다시 보내주세요"
+        )
+        return
 
     if media_group_id:
         if media_group_id not in MEDIA_GROUP_CACHE:

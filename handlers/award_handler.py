@@ -423,8 +423,21 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
     user_id = origin.get('user_id')
     output_path = None
     tmp_files = []
+    print(f"📊 수상 finalize 시작: photos={len(photos) if photos else 0} user={user_id}")
     try:
-        # dedup 체크 (시작 시점) — 발견해도 처리는 진행 (옵션 3)
+        # R1.A: 사진 0장 차단
+        if not photos:
+            log_report_stage('award', 'finalize', 'fail',
+                             user_id=user_id, detail='no_photos')
+            await reply_to_origin(
+                context.bot, origin,
+                "❌ 사진을 첨부하지 않으셨거나 사진 처리 중 오류가 발생했습니다.\n"
+                "📸 사진 1~10장과 함께 다시 보내주세요.\n"
+                "⚠️ 처리 차단됨 (시트 저장 안 됨)"
+            )
+            return
+
+        # dedup 체크 — 옵션 3 (강제 진행 + 경고)
         sub_hash, _was_dup = await check_duplicate_and_warn(
             context, report_type='award', data=data,
             origin=origin, recipient_id=AWARD_RECIPIENT_ID
@@ -590,7 +603,7 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
 
 
 async def _flush_award_report(context, key):
-    """60초 기다린 후, 사진이 계속 오면 5초씩 연장 (최대 5분)"""
+    """60초 기다린 후, 사진이 계속 오면 5초씩 연장 (최대 10분)"""
     start = time.time()
     await asyncio.sleep(60)
     while True:
@@ -599,7 +612,7 @@ async def _flush_award_report(context, key):
             return
         last_photo = entry.get('last_photo_time', 0)
         elapsed = time.time() - start
-        if last_photo > 0 and (time.time() - last_photo) < 5 and elapsed < 300:
+        if last_photo > 0 and (time.time() - last_photo) < 5 and elapsed < 600:
             await asyncio.sleep(5)
             continue
         break
@@ -723,9 +736,24 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     caption = update.message.caption or ''
     media_group_id = update.message.media_group_id
-    photo = update.message.photo[-1]
-    photo_file = await context.bot.get_file(photo.file_id)
-    photo_url = photo_file.file_path
+
+    # R3.A: 디버깅 로그
+    print(f"📸 photo[수상]: chat={update.effective_chat.id} thread={update.message.message_thread_id} "
+          f"user={user_id} media_group={media_group_id} caption={'YES' if caption else 'NO'}")
+
+    # R2.A: get_file 보호
+    try:
+        photo = update.message.photo[-1]
+        photo_file = await context.bot.get_file(photo.file_id)
+        photo_url = photo_file.file_path
+    except Exception as e:
+        print(f"⚠️ 수상 get_file 실패: {e}")
+        await reply_to_origin(
+            context.bot, origin,
+            "⚠️ 사진 처리 실패 — 사진을 다시 보내주세요"
+        )
+        return
+
     key = _award_key(update.effective_chat.id,
                      update.message.message_thread_id, user_id)
 

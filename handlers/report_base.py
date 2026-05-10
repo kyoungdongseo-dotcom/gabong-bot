@@ -82,11 +82,13 @@ def make_origin(update) -> dict:
     }
 
 
-def with_sheet_retry(save_fn, data, retries: int = 3) -> bool:
-    """시트 저장 재시도. 실패 시 1·2·4초 백오프."""
+def with_sheet_retry(save_fn, data=None, retries: int = 3) -> bool:
+    """시트 저장 재시도. 실패 시 1·2·4초 백오프.
+    data=None 이면 save_fn() 인자 없이 호출 (closure 패턴 지원)."""
     for attempt in range(retries):
         try:
-            if save_fn(data):
+            ok = save_fn(data) if data is not None else save_fn()
+            if ok:
                 return True
         except Exception as e:
             print(f"⚠️ 시트 저장 attempt {attempt+1} 실패: {e}")

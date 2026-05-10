@@ -179,6 +179,45 @@ def detect_new_users(days=7) -> list:
         return []
 
 
+def detect_spam_pattern(days: int = 7, threshold: int = 10) -> list:
+    """1주일 N건 초과 보고자 (도배 의심). admin 제외 — 조직 신뢰 모델."""
+    try:
+        admin_ids = set(config.get('admin_ids', []) or [])
+        conn = get_conn()
+        threshold_str = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        rows = conn.execute("""
+            SELECT user_id, report_type, COUNT(*) as cnt
+            FROM report_log
+            WHERE stage = 'received' AND status = 'ok'
+              AND user_id IS NOT NULL
+              AND created_at >= ?
+            GROUP BY user_id, report_type
+        """, (threshold_str,)).fetchall()
+        conn.close()
+        # user_id 별로 집계
+        per_user = defaultdict(lambda: {'total': 0, 'by_type': {}})
+        for r in rows:
+            uid = r['user_id']
+            if uid in admin_ids:
+                continue
+            per_user[uid]['total'] += r['cnt']
+            per_user[uid]['by_type'][r['report_type']] = r['cnt']
+        # threshold 초과만
+        result = []
+        for uid, data in per_user.items():
+            if data['total'] >= threshold:
+                result.append({
+                    'user_id': uid,
+                    'total': data['total'],
+                    'by_type': data['by_type'],
+                })
+        result.sort(key=lambda x: x['total'], reverse=True)
+        return result
+    except Exception as e:
+        print(f"⚠️ detect_spam_pattern 오류: {e}")
+        return []
+
+
 def detect_resubmission_patterns(days=7) -> list:
     """같은 hash 1주일 내 N번 제출 (재제출 패턴)"""
     try:
@@ -313,6 +352,7 @@ def build_weekly_ops_report() -> str:
     sheet_stats = collect_sheet_stats(7)
     new_users = detect_new_users(7)
     resubs = detect_resubmission_patterns(7)
+    spam = detect_spam_pattern(7, threshold=10)
     trend = collect_trend(7)
 
     received = log_stats.get('received', {})
@@ -416,6 +456,17 @@ def build_weekly_ops_report() -> str:
         for r in resubs[:5]:
             label = REPORT_LABEL.get(r['report_type'], r['report_type'])
             lines.append(f"  • {label}: {r['count']}회 (users: {r['users']})")
+
+    # 도배 의심 (1주 10건 초과 비admin 사용자)
+    if spam:
+        lines.extend(["", "🚨 도배 의심 패턴 (1주 10건 초과)"])
+        lines.append("  ⚠️ 정상 사용 가능성도 있음, 확인 권장")
+        for s in spam[:10]:
+            type_str = ' / '.join(
+                f"{REPORT_LABEL.get(rt, rt)} {n}건"
+                for rt, n in s['by_type'].items()
+            )
+            lines.append(f"  • user_id={s['user_id']}: 총 {s['total']}건 ({type_str})")
 
     # 사진 통계
     photo_stats = log_stats.get('photos_stats', {})

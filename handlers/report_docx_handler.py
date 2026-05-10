@@ -97,7 +97,9 @@ def add_photos_grid(doc, photo_paths):
 
         doc.add_paragraph()
 
-def generate_docx(report: dict, output_path: str) -> bool:
+def generate_docx(report: dict, output_path: str, photo_paths: list = None) -> bool:
+    """photo_paths: 호출 측이 미리 다운로드한 임시 파일 경로 리스트.
+    None 이면 report 의 사진URL 에서 직접 다운로드 (하위 호환)."""
     try:
         doc = Document()
 
@@ -145,37 +147,39 @@ def generate_docx(report: dict, output_path: str) -> bool:
         add_section(doc, '5. 잘된 점', report.get('잘된점'))
         add_section(doc, '6. 개선할 점', report.get('개선할점'))
 
-        # 사진 다운로드 및 삽입 (최대 10장)
-        photo_urls = [report.get(f'사진{i}링크', '') for i in range(1, 11)
-                      if report.get(f'사진{i}링크')]
-
-        if photo_urls:
-            tmp_files = []
-            failed_count = 0
-            for url in photo_urls:
-                tmp_path = download_photo(url)
-                if tmp_path:
-                    tmp_files.append(tmp_path)
-                else:
-                    failed_count += 1
-
-            if tmp_files:
-                add_photos_grid(doc, tmp_files)
-
-            if failed_count > 0:
-                note_p = doc.add_paragraph()
-                note_run = note_p.add_run(
-                    f"⚠️ 사진 {len(tmp_files)}장 첨부 완료 / {failed_count}장 다운로드 실패"
-                    " (텔레그램 파일 링크 만료 가능)"
-                )
-                note_run.font.size = Pt(9)
-                note_run.font.color.rgb = RGBColor(0xFF, 0x66, 0x00)
-
-            for tmp_path in tmp_files:
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
+        # 사진 처리: photo_paths 가 있으면 그대로, 없으면 URL 에서 다운로드
+        if photo_paths is not None:
+            valid_paths = [p for p in photo_paths if p and os.path.exists(p)]
+            if valid_paths:
+                add_photos_grid(doc, valid_paths)
+            # 임시 파일 삭제는 호출 측 책임
+        else:
+            photo_urls = [report.get(f'사진{i}링크', '') for i in range(1, 11)
+                          if report.get(f'사진{i}링크')]
+            if photo_urls:
+                tmp_files = []
+                failed_count = 0
+                for url in photo_urls:
+                    tmp_path = download_photo(url)
+                    if tmp_path:
+                        tmp_files.append(tmp_path)
+                    else:
+                        failed_count += 1
+                if tmp_files:
+                    add_photos_grid(doc, tmp_files)
+                if failed_count > 0:
+                    note_p = doc.add_paragraph()
+                    note_run = note_p.add_run(
+                        f"⚠️ 사진 {len(tmp_files)}장 첨부 완료 / {failed_count}장 다운로드 실패"
+                        " (텔레그램 파일 링크 만료 가능)"
+                    )
+                    note_run.font.size = Pt(9)
+                    note_run.font.color.rgb = RGBColor(0xFF, 0x66, 0x00)
+                for tmp_path in tmp_files:
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
 
         footer = doc.add_paragraph()
         footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT

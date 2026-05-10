@@ -409,43 +409,44 @@ def _cleanup_award_photos():
 
 
 async def _finalize_award(context, data: dict, photos: list, *, origin: dict = None):
-    """다중 사진(최대 5장) + 단계 로깅 + 재시도 + 보고자 결과 reply"""
+    """트랜잭션: 사진 → Word → 시트 → DM 전송 → 보고자 reply.
+    D-1 엄격: 사진 1장이라도 실패하면 처리 차단."""
     from handlers.report_base import (
         download_photos_batch, send_to_recipient as base_send,
         notify_admin as base_notify, with_sheet_retry, reply_to_origin,
     )
-    from database import log_report_stage
+    from database import log_report_stage, record_submission
     if origin is None:
         origin = data.get('_origin', {}) or {}
     user_id = origin.get('user_id')
+    output_path = None
+    tmp_files = []
     try:
-        # 사진 URL을 사진1~10링크로 분배
-        for i in range(1, MAX_PHOTOS + 1):
-            data[f'사진{i}링크'] = photos[i-1] if i <= len(photos) else ''
-
         loop = asyncio.get_running_loop()
 
-        # 시트 저장 (3회 재시도)
-        try:
-            sheet_ok = await loop.run_in_executor(None, with_sheet_retry, save_to_sheet, data, 3)
-        except Exception as e:
-            sheet_ok = False
-            print(f"❌ 수상 시트 저장 예외: {e}")
-        log_report_stage('award', 'sheet_saved', 'ok' if sheet_ok else 'fail',
-                         user_id=user_id, chat_id=origin.get('chat_id'),
-                         topic_id=origin.get('message_thread_id'),
-                         message_id=origin.get('message_id'))
-
-        # 다중 사진 다운로드 (3회 재시도, 5초 간격, 최대 10장)
+        # ── 1. 사진 다운로드 (D-1 엄격) ────────────────────────────────
         tmp_files, photo_failed = await download_photos_batch(photos[:MAX_PHOTOS])
         log_report_stage(
             'award', 'photos_downloaded',
-            'ok' if photo_failed == 0 else ('partial' if tmp_files else 'fail'),
+            'ok' if photo_failed == 0 else 'fail',
             user_id=user_id,
             detail=f"ok={len(tmp_files)} fail={photo_failed}"
         )
+        if photo_failed > 0:
+            for tmp in tmp_files:
+                try: os.remove(tmp)
+                except Exception: pass
+            await reply_to_origin(
+                context.bot, origin,
+                f"❌ 사진 다운로드 실패\n"
+                f"사진 {len(photos)}장 중 {photo_failed}장 실패\n"
+                f"모든 사진을 다시 보내주세요"
+            )
+            log_report_stage('award', 'finalize', 'fail',
+                             user_id=user_id, detail='photo_failed')
+            return
 
-        # Word 생성
+        # ── 2. Word 생성 ────────────────────────────────────────────────
         now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
         output_path = f"/tmp/award_{now_str}.docx"
         try:
@@ -458,45 +459,66 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
         log_report_stage('award', 'docx_generated',
                          'ok' if docx_ok else 'fail', user_id=user_id)
 
+        # 사진 임시파일 정리 (Word 생성 후)
         for tmp in tmp_files:
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
+            try: os.remove(tmp)
+            except Exception: pass
 
-        # 요약 DM
-        summary = (
-            f"{'✅' if sheet_ok else '⚠️'} 수상보고서 처리 결과\n"
-            f"📌 {data.get('지역')} {data.get('지부')}\n"
-            f"🏆 {data.get('수상명')}\n"
-            f"📅 {data.get('수상일시')}"
-        )
-        if photos:
-            summary += f"\n📸 사진 {len(photos)}장 첨부"
-        warnings = []
-        if not sheet_ok:
-            warnings.append("스프레드시트 저장 실패 — 수동 저장 필요")
         if not docx_ok:
-            warnings.append("Word 파일 생성 실패 — 텍스트만 저장됨")
-        if photo_failed > 0:
-            warnings.append(f"사진 {photo_failed}장 다운로드 실패 (파일 링크 만료 가능)")
-        if warnings:
-            summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
+            try:
+                if output_path and os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception: pass
+            await reply_to_origin(
+                context.bot, origin,
+                "❌ Word 파일 생성 실패\n"
+                "사진과 보고서를 다시 보내주세요\n"
+                "시트 저장도 안 됐습니다"
+            )
+            log_report_stage('award', 'finalize', 'fail',
+                             user_id=user_id, detail='docx_fail')
+            return
 
+        # ── 3. 시트 저장 (Word 검증 통과 후) ────────────────────────────
+        for i in range(1, MAX_PHOTOS + 1):
+            data[f'사진{i}링크'] = photos[i-1] if i <= len(photos) else ''
+        try:
+            sheet_ok = await loop.run_in_executor(
+                None, with_sheet_retry, save_to_sheet, data, 3
+            )
+        except Exception as e:
+            sheet_ok = False
+            print(f"❌ 수상 시트 저장 예외: {e}")
+        log_report_stage('award', 'sheet_saved',
+                         'ok' if sheet_ok else 'fail',
+                         user_id=user_id, chat_id=origin.get('chat_id'),
+                         topic_id=origin.get('message_thread_id'),
+                         message_id=origin.get('message_id'))
+
+        # ── 4. 서무 DM 요약 ────────────────────────────────────────────
+        if sheet_ok:
+            summary = (
+                f"✅ 수상보고서 처리 완료\n"
+                f"📌 {data.get('지역')} {data.get('지부')}\n"
+                f"🏆 {data.get('수상명')}\n"
+                f"📅 {data.get('수상일시')}\n"
+                f"📸 사진 {len(photos)}장 첨부"
+            )
+        else:
+            summary = (
+                f"⚠️ {data.get('지역')} {data.get('지부')} 수상보고서 - 시트 저장 실패!\n"
+                f"Word 파일은 정상이지만 스프레드시트 자동 저장 실패\n"
+                f"수동으로 수상보고창 시트에 추가 부탁드립니다\n\n"
+                f"🏆 {data.get('수상명')}\n"
+                f"📅 {data.get('수상일시')}\n"
+                f"📸 사진 {len(photos)}장"
+            )
         dm_ok = await base_send(context.bot, AWARD_RECIPIENT_ID, text=summary)
         log_report_stage('award', 'recipient_dm_sent',
                          'ok' if dm_ok else 'fail', user_id=user_id)
 
-        # 중복 제출 기록
-        try:
-            from database import record_submission
-            sub_hash = f"{data.get('지부', '')}|{data.get('수상명', '')}"
-            record_submission('award', sub_hash, summary[:200])
-        except Exception:
-            pass
-
-        # Word 파일 전송
-        if docx_ok and os.path.exists(output_path):
+        # ── 5. Word 파일 서무에게 전송 ─────────────────────────────────
+        if output_path and os.path.exists(output_path):
             filename = (
                 f"{data.get('지역', '')}_{data.get('지부', '')}_수상보고서"
                 f"_{datetime.now(KST).strftime('%Y%m%d')}.docx"
@@ -509,37 +531,45 @@ async def _finalize_award(context, data: dict, photos: list, *, origin: dict = N
                         caption="📄 수상보고서 Word 파일"
                     )
             finally:
-                try:
-                    os.remove(output_path)
-                except Exception:
-                    pass
+                try: os.remove(output_path)
+                except Exception: pass
 
-        # 보고자 최종 결과 reply
-        result_lines = []
-        if sheet_ok and docx_ok and photo_failed == 0 and dm_ok:
-            result_lines.append("✅ 모든 처리 완료")
+        # 중복 기록
+        try:
+            sub_hash = f"{data.get('지부', '')}|{data.get('수상명', '')}"
+            record_submission('award', sub_hash, summary[:200])
+        except Exception: pass
+
+        # ── 6. 보고자 최종 reply ────────────────────────────────────────
+        if sheet_ok and dm_ok:
+            await reply_to_origin(
+                context.bot, origin,
+                f"✅ 모든 처리 완료\n📸 사진 {len(photos)}장 첨부됨"
+            )
+        elif sheet_ok and not dm_ok:
+            await reply_to_origin(
+                context.bot, origin,
+                "⚠️ 시트 저장 ✅\n⚠️ 서무 DM 전송 실패 - 관리자에게 알림됨"
+            )
         else:
-            result_lines.append("⚠️ 처리 부분 완료")
-            if sheet_ok:
-                result_lines.append("  ✅ 시트 저장")
-            else:
-                result_lines.append("  ❌ 시트 저장 실패")
-            if docx_ok:
-                result_lines.append("  ✅ Word 파일 생성")
-            else:
-                result_lines.append("  ❌ Word 파일 생성 실패")
-            if photo_failed > 0:
-                result_lines.append(
-                    f"  ⚠️ 사진 {photo_failed}장 다운로드 실패 — 다시 보내주세요"
-                )
-            if not dm_ok:
-                result_lines.append("  ⚠️ 서무 DM 전송 실패 — 관리자에게 알림")
-        await reply_to_origin(context.bot, origin, "\n".join(result_lines))
+            await reply_to_origin(
+                context.bot, origin,
+                "⚠️ 시트 저장 실패 - 자동 처리됨\n"
+                "Word 파일은 서무에게 정상 전송됐습니다\n"
+                "시트는 서무가 수동 추가합니다"
+            )
         log_report_stage('award', 'reporter_ack_sent', 'ok', user_id=user_id)
     except Exception as e:
         import traceback
-        log_report_stage('award', 'finalize', 'fail', user_id=user_id,
-                         detail=str(e)[:200])
+        # 임시 파일 정리
+        for tmp in tmp_files:
+            try: os.remove(tmp)
+            except Exception: pass
+        if output_path:
+            try: os.remove(output_path)
+            except Exception: pass
+        log_report_stage('award', 'finalize', 'fail',
+                         user_id=user_id, detail=str(e)[:200])
         await base_notify(
             context.bot,
             f"❌ 수상보고서 처리 중 예외 발생: {e}\n"

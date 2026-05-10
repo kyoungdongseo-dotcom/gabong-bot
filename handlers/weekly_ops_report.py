@@ -496,11 +496,11 @@ async def send_weekly_ops_report(bot):
 
 
 async def weekly_ops_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/weekly_ops — 메인 관리자 즉시 조회"""
+    """/weekly_ops — 관리자(admin_ids 6명) 즉시 조회"""
     if not update.message:
         return
-    if update.effective_user.id != ADMIN_USER_ID:
-        await update.message.reply_text("❌ 메인 관리자 전용 명령입니다.")
+    if update.effective_user.id not in config.get('admin_ids', []):
+        await update.message.reply_text("❌ 관리자만 사용 가능합니다.")
         return
     await update.message.reply_text("📊 주간 운영 리포트 생성 중... (수 초 소요)")
     loop = asyncio.get_running_loop()

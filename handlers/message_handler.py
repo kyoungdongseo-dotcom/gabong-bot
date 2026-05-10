@@ -513,6 +513,10 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     bot_username = context.bot.username
     if f"@{bot_username}" in text:
+        # 봇 멘션 AI 호출 — admin 만 허용 (트래픽/비용 통제)
+        # /ai 명령어와 동일 정책. 일반 사용자는 silent ignore (스팸 방지).
+        if user_id not in config.get('admin_ids', []):
+            return
         question = text.replace(f"@{bot_username}", "").strip()
         if not question:
             return

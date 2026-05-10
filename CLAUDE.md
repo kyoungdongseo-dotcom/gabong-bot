@@ -240,3 +240,53 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - 신규 그룹 차단: `join_guard` 플러그인
 - 토큰 노출 금지: `config.json`은 `.gitignore`
 - `serviceAccountKey.json` 권한 600 권장
+
+## 🔐 권한 매트릭스
+
+`admin_ids` (6명): 97057565(메인), 754270008(서무), 414481241, 5242761926, 1104086017, 1062746453
+
+### 📊 리포트/점검 (admin_ids 6명)
+- `/weekly_ops` — 주간 운영 리포트
+- `/report_stats` — 월간 통계
+- `/status` — 봇 상태
+- `/backup` — 즉시 백업
+- `/admin` — 관리자 대시보드
+- `/schedule`, `/weekly_report` — 일정/주간 리포트
+- `/reminder_stats`, `/reminder_analysis`
+
+### 📢 일반 관리 (admin_ids 6명)
+- `/report`, `/monthly` — 보고서 분석
+- `/notice`, `/broadcast` — ⚠️ 권한 미확인 (별도 분석 필요)
+- `/reply` — ⚠️ 권한 미확인
+- `/sheet` — ⚠️ 권한 미확인
+- `/add_group` — 신규 그룹 화이트리스트 추가
+
+### 🤖 AI 호출 (admin_ids 6명) — **모든 진입점**
+- `/ai`, `/summary`, `/reset` — `check_admin` (utils.permissions)
+- `/mode`, `/summary_detailed`, `/summary_brief` (ai_advanced)
+- `@봇이름` 멘션 — admin_ids 체크 (트래픽/비용 통제)
+- "요약" 키워드 자동 호출 — 봇 멘션 분기 안에서 admin 체크 통과 후 동작
+
+### ⏰ 리마인더 (admin_ids 6명)
+- `/remind_daily`, `/remind_weekly`, `/remind_biweekly`, `/remind_monthly`
+- `/broadcast_remind_*` — 13개 그룹 일괄
+- `/my_reminders`, `/delete_reminder`
+
+### 👥 일반 사용자 (누구나)
+- `/help` — 도움말 (인라인 버튼)
+- `/myreports` — 본인 제출 이력 30일
+- `/start` — 봇 시작 (notice_plugin, ⚠️ 별도 분석 필요)
+
+### 🔍 자동 알림 (사용자 액션)
+- `mention_keywords` 자동 알림 — 키워드 포함 메시지 시 토픽 알림 (admin 외 사용자 트리거 가능)
+- `my_keywords` 멘션 알림 — 메인 관리자에게 DM (트리거: 누구나)
+
+### 보고서 처리 (자동)
+- 봉사보고서: 봇이 자동 처리 (사진 + 텍스트 인식)
+- 수상/MOU 보고서: 토픽별 자동 처리
+- 권한 체크 없음 (모든 메시지가 자동 분석 대상)
+
+### 차단 정책
+- 봇 멘션 / `/ai` 비admin 호출: **silent ignore** (스팸 방지)
+- `/weekly_ops` 등 명시적 명령어 비admin: "❌ 관리자만 사용 가능합니다"
+- 그룹 화이트리스트 외: "❌ 이 그룹에서는 ... 사용할 수 없습니다"

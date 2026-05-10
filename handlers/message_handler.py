@@ -25,6 +25,25 @@ MAX_PHOTOS = 10
 # award(3553)/mou(3225) 토픽 — 해당 핸들러가 직접 처리
 EXCLUDED_TOPICS = {3553, 3225}
 
+# my_keywords 빈도 제한 (메인 관리자 DM 도배 방지)
+MY_KEYWORD_TRIGGER_HISTORY = {}   # {user_id: [timestamp, ...]}
+MY_KEYWORD_LIMIT = 3              # 1시간 3회
+MY_KEYWORD_WINDOW = 3600          # 1시간(초)
+
+
+def check_my_keyword_rate_limit(user_id: int) -> bool:
+    """1시간 내 N회 초과 시 False (silent drop). 정상 범위면 True 반환."""
+    now = time.time()
+    history = MY_KEYWORD_TRIGGER_HISTORY.get(user_id, [])
+    # 윈도우 밖 기록 제거
+    history = [t for t in history if now - t < MY_KEYWORD_WINDOW]
+    if len(history) >= MY_KEYWORD_LIMIT:
+        MY_KEYWORD_TRIGGER_HISTORY[user_id] = history  # 정리만 반영
+        return False
+    history.append(now)
+    MY_KEYWORD_TRIGGER_HISTORY[user_id] = history
+    return True
+
 # 5분 후 만료된 MEDIA_GROUP_CACHE 정리
 CACHE_TTL = 300
 
@@ -479,17 +498,22 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     MY_KEYWORDS = config.get('my_keywords')
     my_keyword_found = any(kw in text for kw in MY_KEYWORDS)
     if my_keyword_found and update.effective_user.id != config.get('my_user_id'):
-        group_name = update.message.chat.title or "그룹"
-        sender = update.effective_user.first_name
-        LAST_MENTION[config.get('my_user_id')] = {
-            "chat_id": chat_id,
-            "message_id": update.message.message_id
-        }
-        save_last_mention(LAST_MENTION)
-        await context.bot.send_message(
-            chat_id=config.get('my_user_id'),
-            text=f"📣 멘션/호출 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}\n\n답변하려면: /reply [내용]"
-        )
+        # 빈도 제한 (1시간 3회) — 도배 방지 silent drop
+        if not check_my_keyword_rate_limit(update.effective_user.id):
+            print(f"⚠️ my_keyword 빈도 제한 차단: user={update.effective_user.id} group={update.message.chat.title}")
+        else:
+            group_name = update.message.chat.title or "그룹"
+            sender = update.effective_user.first_name
+            print(f"📣 my_keyword 트리거: user={update.effective_user.id} group={group_name}")
+            LAST_MENTION[config.get('my_user_id')] = {
+                "chat_id": chat_id,
+                "message_id": update.message.message_id
+            }
+            save_last_mention(LAST_MENTION)
+            await context.bot.send_message(
+                chat_id=config.get('my_user_id'),
+                text=f"📣 멘션/호출 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}\n\n답변하려면: /reply [내용]"
+            )
 
     MENTION_KEYWORDS = config.get('mention_keywords')
     EXCLUDE_GROUPS = config.get('exclude_groups')

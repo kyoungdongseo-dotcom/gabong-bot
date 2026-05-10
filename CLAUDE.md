@@ -282,8 +282,12 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - `/start` — 봇 시작 (notice_plugin, ⚠️ 별도 분석 필요)
 
 ### 🔍 자동 알림 (사용자 액션)
-- `mention_keywords` 자동 알림 — 키워드 포함 메시지 시 토픽 알림 (admin 외 사용자 트리거 가능)
-- `my_keywords` 멘션 알림 — 메인 관리자에게 DM (트리거: 누구나)
+- `mention_keywords` 자동 알림 (16개 키워드)
+  → 총회봉교부 토픽 알림. ✅ **안전** (admin 제외 + EXCLUDE_GROUPS 13개 + partial_exclude)
+- `my_keywords` 메인 관리자 DM 알림 (5개 키워드: `@gamdongwon`, `부장님`, `부장`, `봉교부장님`, `봉사교통부장님`)
+  → ✅ **빈도 제한 적용**: 사용자별 1시간 3회 (메모리 dict, 봇 재시작 시 초기화)
+  → 한도 초과 시 silent drop + 로그 (`⚠️ my_keyword 빈도 제한 차단`)
+  → 정상 트리거 시 `📣 my_keyword 트리거` 로그
 
 ### 보고서 처리 (자동)
 - 봉사보고서: 봇이 자동 처리 (사진 + 텍스트 인식)
@@ -304,13 +308,15 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   → 별도 작업으로 group 분리 또는 명령어 형태로 변경 필요.
 
 **다음 분석 후보** (우선순위 순):
-1. `mention_keywords` 자동 알림 — 누구나 트리거 가능 (도배 위험)
-2. `my_keywords` 메인 관리자 DM 알림 — 누구나 트리거 가능
-3. 보고서 자동 처리 권한 — 도메인 제약만으로 보호되는 케이스 검토
-4. `broadcast_photo` 작동 회복 (group 분리 또는 명령어화)
+1. 보고서 자동 처리 권한 — 도메인 제약만으로 보호되는 케이스 검토
+2. `broadcast_photo` 작동 회복 (group 분리 또는 명령어화)
+3. `LAST_MENTION` 큐화 (현재는 가장 최근 멘션 1개만, 도배 시 정상 알림 손실)
+4. `/sheet` 코드 품질 (하드코딩 인덱스, 컬럼 안전성)
 
-**검토 완료** (안전 확인):
+**검토 완료** (안전 확인 또는 정책 적용):
 - /sheet (admin 6명), /reply (메인 관리자 1명) — 변경 불필요
+- mention_keywords — EXCLUDE_GROUPS + admin 제외로 안전
+- my_keywords — 빈도 제한 1시간 3회 적용
 
 **제거된 dead code**:
 - `notice_handler.notice_photo` — plugin 등록 없음, 한 번도 호출 안 됨

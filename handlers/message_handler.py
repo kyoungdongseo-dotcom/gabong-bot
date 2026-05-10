@@ -130,10 +130,10 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
             report[f'사진{i}링크'] = url
         service = get_sheet_service()
         spreadsheet_id = config.get('spreadsheet_id')
-        def _save():
-            return save_report_to_sheet(report, service, spreadsheet_id)
+        def _save(data):
+            return save_report_to_sheet(data, service, spreadsheet_id)
         try:
-            sheet_ok = await loop.run_in_executor(None, with_sheet_retry, _save, None, 3)
+            sheet_ok = await loop.run_in_executor(None, with_sheet_retry, _save, report, 3)
         except Exception as e:
             sheet_ok = False
             print(f"⚠️ 봉사 시트 저장 예외: {e}")

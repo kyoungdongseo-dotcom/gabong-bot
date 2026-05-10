@@ -14,7 +14,7 @@ import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
 from handlers.weekly_report_analyzer import send_weekly_report
 from handlers.monthly_stats_handler import send_monthly_stats
-from handlers.backup_handler import run_backup
+from handlers.backup_handler import run_backup, run_daily_cleanup, run_weekly_cleanup
 
 PID_FILE = "./data/bot.pid"
 
@@ -157,6 +157,10 @@ async def post_init(app):
     scheduler.add_job(send_weekly_report, 'cron', day_of_week='mon', hour=8, minute=0, args=[app.bot], id="weekly_report_analyzer")
     scheduler.add_job(send_monthly_stats, 'cron', day=1, hour=0, minute=0, args=[app.bot], id="monthly_stats")
     scheduler.add_job(run_backup, 'cron', hour=3, minute=0, args=[app.bot], id="daily_backup")
+    # 매일 03:30 — recent_submissions 24h cleanup
+    scheduler.add_job(run_daily_cleanup, 'cron', hour=3, minute=30, args=[app.bot], id="daily_cleanup")
+    # 매주 일요일 04:00 — report_log 90일 + /tmp/*.docx 24h cleanup
+    scheduler.add_job(run_weekly_cleanup, 'cron', day_of_week='sun', hour=4, minute=0, args=[app.bot], id="weekly_cleanup")
     asyncio.create_task(check_changes(app))
 
 

@@ -195,34 +195,5 @@ def generate_docx(report: dict, output_path: str, photo_paths: list = None) -> b
         print(f"❌ Word 생성 오류: {e}")
         return False
 
-async def generate_and_send_docx(bot, chat_id, report: dict, message_id: int = None):
-    try:
-        output_path = f"/tmp/report_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.docx"
-
-        success = generate_docx(report, output_path)
-        if not success:
-            return False
-
-        jipa = report.get('지파명', '')
-        church = report.get('교회명', '')
-        activity = report.get('활동명', '')
-        date = report.get('활동일시', '')[:10] if report.get('활동일시') else ''
-
-        filename = f"{jipa}_{church}_{activity}_{date}.docx"
-        filename = filename.replace(' ', '_').replace('/', '-')
-
-        with open(output_path, 'rb') as f:
-            await bot.send_document(
-                chat_id=DOCX_RECIPIENT_ID,
-                document=f,
-                filename=filename,
-                caption=f"📄 새 봉사보고서 Word 파일\n📌 {jipa} {church}\n📋 {activity}\n📅 {date}"
-            )
-
-        os.remove(output_path)
-        print(f"✅ Word 파일 전송 완료: {filename}")
-        return True
-
-    except Exception as e:
-        print(f"❌ Word 파일 생성/전송 오류: {e}")
-        return False
+# generate_and_send_docx 는 트랜잭션 패턴 도입 후 사용처 0건 → 제거.
+# 봉사보고서 finalize_report 가 generate_docx 직접 호출 + 사진 paths 전달.

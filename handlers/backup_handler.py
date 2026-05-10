@@ -91,6 +91,67 @@ async def run_backup(bot) -> str:
     return result
 
 
+def cleanup_tmp_docx(max_age_hours: int = 24) -> int:
+    """/tmp 의 award_*.docx, mou_*.docx, report_*.docx 중 N시간 이전 정리.
+    정리 건수 반환 (실패 시 -1)."""
+    try:
+        cutoff = datetime.now().timestamp() - max_age_hours * 3600
+        deleted = 0
+        for fname in os.listdir("/tmp"):
+            if not fname.endswith(".docx"):
+                continue
+            if not (fname.startswith("award_") or fname.startswith("mou_")
+                    or fname.startswith("report_")):
+                continue
+            fpath = os.path.join("/tmp", fname)
+            try:
+                if os.path.getmtime(fpath) < cutoff:
+                    os.remove(fpath)
+                    deleted += 1
+            except Exception:
+                pass
+        print(f"✅ /tmp/*.docx cleanup: {deleted}개 정리 ({max_age_hours}h 이전)")
+        return deleted
+    except Exception as e:
+        print(f"⚠️ /tmp/*.docx cleanup 실패: {e}")
+        return -1
+
+
+async def run_daily_cleanup(bot=None):
+    """매일 03:30 — 24h 이전 recent_submissions 정리"""
+    from database import cleanup_recent_submissions
+    loop = asyncio.get_running_loop()
+    deleted = await loop.run_in_executor(None, cleanup_recent_submissions, 86400)
+    if bot and deleted < 0:
+        try:
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ daily cleanup 실패: recent_submissions"
+            )
+        except Exception:
+            pass
+
+
+async def run_weekly_cleanup(bot=None):
+    """매주 일요일 04:00 — 90일 이전 report_log 정리 + /tmp docx 정리"""
+    from database import cleanup_report_log
+    loop = asyncio.get_running_loop()
+    log_deleted = await loop.run_in_executor(None, cleanup_report_log, 90)
+    docx_deleted = await loop.run_in_executor(None, cleanup_tmp_docx, 24)
+    if bot:
+        try:
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"🧹 주간 cleanup 완료\n"
+                    f"  • report_log (90일): {log_deleted}건\n"
+                    f"  • /tmp *.docx (24h): {docx_deleted}개"
+                )
+            )
+        except Exception as e:
+            print(f"[cleanup] 관리자 알림 실패: {e}")
+
+
 async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return

@@ -5,7 +5,6 @@ import time
 import config
 from utils import ask_claude, get_chat_mode, log_message, GROUP_MESSAGES, LAST_MENTION, save_last_mention
 from handlers.report_parser import parse_report, save_report_to_sheet
-from handlers.report_docx_handler import generate_and_send_docx
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 

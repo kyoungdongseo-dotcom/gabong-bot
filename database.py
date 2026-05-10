@@ -355,13 +355,24 @@ def find_recent_submission(report_type: str, submission_hash: str,
     return dict(row) if row else None
 
 
-def cleanup_recent_submissions(max_age_sec: float = 86400):
-    """24시간 이상 된 항목 정리"""
-    conn = get_conn()
-    threshold = datetime.now().timestamp() - max_age_sec
-    conn.execute("DELETE FROM recent_submissions WHERE submitted_at < ?", (threshold,))
-    conn.commit()
-    conn.close()
+def cleanup_recent_submissions(max_age_sec: float = 86400) -> int:
+    """24시간 이상 된 항목 정리. 정리 건수 반환 (실패 시 -1)."""
+    try:
+        conn = get_conn()
+        threshold = datetime.now().timestamp() - max_age_sec
+        cursor = conn.execute(
+            "DELETE FROM recent_submissions WHERE submitted_at < ?",
+            (threshold,)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        hours = int(max_age_sec / 3600)
+        print(f"✅ recent_submissions cleanup: {deleted}건 정리 ({hours}h 이전)")
+        return deleted
+    except Exception as e:
+        print(f"⚠️ recent_submissions cleanup 실패: {e}")
+        return -1
 
 
 # ── 보고서 처리 단계 로그 ─────────────────────────────────────────────────────
@@ -409,16 +420,24 @@ def get_report_log_stats(report_type: str = None, hours: int = 24) -> dict:
         return {}
 
 
-def cleanup_report_log(max_age_days: int = 30):
+def cleanup_report_log(max_age_days: int = 90) -> int:
+    """N일 이상 된 단계 로그 정리. 정리 건수 반환 (실패 시 -1).
+    기본값 90일 (분기 통계 + 디버깅 여유 보장)."""
     try:
         conn = get_conn()
         threshold = (datetime.now().timestamp() - max_age_days * 86400)
         threshold_str = datetime.fromtimestamp(threshold).strftime('%Y-%m-%d %H:%M:%S')
-        conn.execute("DELETE FROM report_log WHERE created_at < ?", (threshold_str,))
+        cursor = conn.execute(
+            "DELETE FROM report_log WHERE created_at < ?", (threshold_str,)
+        )
+        deleted = cursor.rowcount
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+        print(f"✅ report_log cleanup: {deleted}건 정리 ({max_age_days}일 이전)")
+        return deleted
+    except Exception as e:
+        print(f"⚠️ report_log cleanup 실패: {e}")
+        return -1
 
 
 def get_user_reports(user_id: int, days: int = 30) -> list:

@@ -301,6 +301,13 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   → 한도 초과 시 silent drop + 로그 (`⚠️ my_keyword 빈도 제한 차단`)
   → 정상 트리거 시 `📣 my_keyword 트리거` 로그
 
+### 📋 스프레드시트 변경 감지
+- `utils.check_changes` — 60초 폴링, 행 5~9 모니터링
+- **디바운싱 30분**: 같은 행 알림 후 30분 내 추가 변경 silent skip
+- 다른 행은 독립 카운트 (각자 첫 변경 즉시 알림)
+- 메모리 dict (`LAST_SHEET_NOTIFY`, 봇 재시작 시 초기화)
+- 로그: `📋 sheet 변경 감지 → 알림` / `⏸️ sheet 알림 디바운싱`
+
 ### 🛡️ 텔레그램 한도 자동 보호 (AIORateLimiter)
 - `main.py` ApplicationBuilder 에 `AIORateLimiter(max_retries=3)` 적용
 - PTB v22 내장 — 모든 `send_message` / `send_document` 자동 보호

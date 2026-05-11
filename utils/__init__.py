@@ -20,6 +20,11 @@ CACHE_FILE = config.get('cache_file')
 REMINDERS_FILE = config.get('reminders_file')
 DATABASE_FILE = config.get('database_file') or './data/bot_data.db'
 
+# sheet 변경 감지 디바운싱 (행별 30분 — 도배 방지)
+import time as _time_mod
+LAST_SHEET_NOTIFY = {}              # {row_key: timestamp}
+SHEET_NOTIFY_INTERVAL = 1800        # 30분(초)
+
 
 def ensure_data_dir():
     db_dir = os.path.dirname(DATABASE_FILE)
@@ -285,6 +290,15 @@ async def check_changes(app):
                 row_str = str(row)
                 new_cache[key] = row_str
                 if key in cache and cache[key] != row_str and row[0]:
+                    # 디바운싱: 같은 행 알림 후 30분 내 추가 변경은 silent skip
+                    now_ts = _time_mod.time()
+                    last = LAST_SHEET_NOTIFY.get(key, 0)
+                    if now_ts - last < SHEET_NOTIFY_INTERVAL:
+                        elapsed = int(now_ts - last)
+                        remaining = SHEET_NOTIFY_INTERVAL - elapsed
+                        print(f"⏸️ sheet 알림 디바운싱: row={key} (last={elapsed}s ago, {remaining}s 후 가능)")
+                        continue
+                    LAST_SHEET_NOTIFY[key] = now_ts
                     GROUP_ID = config.get('group_id')
                     TOPIC_ID = config.get('topic_id')
                     msg = (
@@ -292,6 +306,7 @@ async def check_changes(app):
                         f"과명: {row[0]}\n회의 일자: {row[1]}\n회의 안건: {row[2]}\n"
                         f"금주 진행 일정: {row[8]}\n금주 진행 현황: {row[9]}"
                     )
+                    print(f"📋 sheet 변경 감지 → 알림: row={key} content={str(row[0])[:30]!r}")
                     await app.bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=msg)
             save_cache(new_cache)
             await asyncio.sleep(NORMAL_INTERVAL)

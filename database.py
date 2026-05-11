@@ -512,14 +512,16 @@ def get_user_reports(user_id: int, days: int = 30) -> list:
         """, (user_id, threshold_str)).fetchall()
         result = []
         for r in rows:
-            # 같은 user/type/message_id 의 finalize 결과 조회
+            # 같은 user/type/message_id 의 finalize 결과만 조회
+            # (message_id 필터 누락 시 같은 user 의 다른 보고서 stage 가 섞임 — 2026-05-11 버그 수정)
             final = conn.execute("""
                 SELECT stage, status, detail FROM report_log
                 WHERE user_id = ? AND report_type = ?
+                  AND message_id = ?
                   AND created_at >= ?
                   AND stage IN ('sheet_saved', 'finalize', 'reporter_ack_sent')
                 ORDER BY id DESC LIMIT 5
-            """, (user_id, r['report_type'], r['created_at'])).fetchall()
+            """, (user_id, r['report_type'], r['message_id'], r['created_at'])).fetchall()
             stages = {f['stage']: f['status'] for f in final}
             if stages.get('finalize') == 'fail':
                 outcome = 'fail'

@@ -301,6 +301,15 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   → 한도 초과 시 silent drop + 로그 (`⚠️ my_keyword 빈도 제한 차단`)
   → 정상 트리거 시 `📣 my_keyword 트리거` 로그
 
+### 📊 보고서 처리 이력 (`report_log`)
+
+- `log_report_stage()` 가 모든 보고서 처리 단계 기록
+- `get_user_reports()` 는 보고서별 outcome 판정 → `/myreports`
+- **outcome 판정 시 `(user_id, report_type, message_id)` 3개 조합으로 매칭** 필수
+  - `message_id` 필터 누락 시: 같은 user 의 다른 보고서 stage 가 섞임
+  - 1건의 fail 이 동일 user 의 직후 보고서들도 fail 로 잘못 판정 (2026-05-11 버그 수정)
+- DB 스키마에 `message_id` 컬럼 있음 → SQL 작성 시 항상 포함
+
 ### 📋 스프레드시트 변경 감지
 - `utils.check_changes` — 60초 폴링, 행 5~9 모니터링
 - **디바운싱 30분**: 같은 행 알림 후 30분 내 추가 변경 silent skip

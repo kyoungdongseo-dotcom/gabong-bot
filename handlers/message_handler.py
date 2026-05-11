@@ -30,6 +30,12 @@ MY_KEYWORD_TRIGGER_HISTORY = {}   # {user_id: [timestamp, ...]}
 MY_KEYWORD_LIMIT = 3              # 1시간 3회
 MY_KEYWORD_WINDOW = 3600          # 1시간(초)
 
+# mention_keywords 빈도 제한 (총회봉사교통부 토픽 도배 방지)
+# 14개 그룹 → 같은 토픽 발송 → 텔레그램 20msg/분 한도 보호
+MENTION_TRIGGER_HISTORY = {}      # {user_id: [timestamp, ...]}
+MENTION_LIMIT = 3                 # 1시간 3회
+MENTION_WINDOW = 3600             # 1시간(초)
+
 
 def check_my_keyword_rate_limit(user_id: int) -> bool:
     """1시간 내 N회 초과 시 False (silent drop). 정상 범위면 True 반환."""
@@ -42,6 +48,19 @@ def check_my_keyword_rate_limit(user_id: int) -> bool:
         return False
     history.append(now)
     MY_KEYWORD_TRIGGER_HISTORY[user_id] = history
+    return True
+
+
+def check_mention_rate_limit(user_id: int) -> bool:
+    """mention_keywords 1시간 내 N회 초과 시 False (silent drop)."""
+    now = time.time()
+    history = MENTION_TRIGGER_HISTORY.get(user_id, [])
+    history = [t for t in history if now - t < MENTION_WINDOW]
+    if len(history) >= MENTION_LIMIT:
+        MENTION_TRIGGER_HISTORY[user_id] = history
+        return False
+    history.append(now)
+    MENTION_TRIGGER_HISTORY[user_id] = history
     return True
 
 # 5분 후 만료된 MEDIA_GROUP_CACHE 정리
@@ -525,9 +544,14 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
             partial_keywords = PARTIAL_EXCLUDE.get(str(chat_id), [])
             if partial_keywords and keyword in partial_keywords:
                 continue
+            # 빈도 제한 (사용자별 1시간 3회) — 토픽 도배 + 텔레그램 한도 보호
+            if not check_mention_rate_limit(update.effective_user.id):
+                print(f"⚠️ mention_keyword 빈도 제한 차단: user={update.effective_user.id} kw={keyword!r}")
+                break
             group_name = update.message.chat.title or "그룹"
             sender = update.effective_user.first_name
             topic_id = TOPIC_IDS[topic_name]
+            print(f"📣 mention 트리거: user={update.effective_user.id} kw={keyword!r} group={group_name!r} topic={topic_name!r}")
             await context.bot.send_message(
                 chat_id=config.get('group_id'),
                 message_thread_id=topic_id,

@@ -9,7 +9,7 @@ import pkgutil
 import importlib
 from pathlib import Path
 from telegram import BotCommand
-from telegram.ext import ApplicationBuilder
+from telegram.ext import ApplicationBuilder, AIORateLimiter
 import config
 from utils import init_database, scheduler, send_daily_summary, check_changes
 from handlers.weekly_report_analyzer import send_weekly_report
@@ -168,7 +168,13 @@ async def post_init(app):
 enabled_plugins = config.get("enabled_plugins") or []
 loaded_plugins = load_plugins(enabled_plugins)
 
-app = ApplicationBuilder().token(config.get("telegram_token")).post_init(post_init).build()
+app = (
+    ApplicationBuilder()
+    .token(config.get("telegram_token"))
+    .rate_limiter(AIORateLimiter(max_retries=3))   # 텔레그램 한도 자동 관리 + 429 자동 retry
+    .post_init(post_init)
+    .build()
+)
 
 for plugin_name, plugin in loaded_plugins:
     if hasattr(plugin, "register"):

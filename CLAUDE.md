@@ -283,11 +283,22 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 
 ### 🔍 자동 알림 (사용자 액션)
 - `mention_keywords` 자동 알림 (16개 키워드)
-  → 총회봉교부 토픽 알림. ✅ **안전** (admin 제외 + EXCLUDE_GROUPS 13개 + partial_exclude)
+  → 총회봉교부 토픽 알림. 발송 가능 그룹 14개 (allowed - exclude).
+  → ✅ **다층 보호**: admin 제외 + EXCLUDE_GROUPS 13개 + partial_exclude
+  → ✅ **빈도 제한 적용**: 사용자별 1시간 3회 (텔레그램 20msg/분 한도 보호)
+  → 한도 초과 시 silent drop + 로그 (`⚠️ mention_keyword 빈도 제한 차단`)
+  → 정상 트리거 시 `📣 mention 트리거` 로그
 - `my_keywords` 메인 관리자 DM 알림 (5개 키워드: `@gamdongwon`, `부장님`, `부장`, `봉교부장님`, `봉사교통부장님`)
   → ✅ **빈도 제한 적용**: 사용자별 1시간 3회 (메모리 dict, 봇 재시작 시 초기화)
   → 한도 초과 시 silent drop + 로그 (`⚠️ my_keyword 빈도 제한 차단`)
   → 정상 트리거 시 `📣 my_keyword 트리거` 로그
+
+### 🛡️ 텔레그램 한도 자동 보호 (AIORateLimiter)
+- `main.py` ApplicationBuilder 에 `AIORateLimiter(max_retries=3)` 적용
+- PTB v22 내장 — 모든 `send_message` / `send_document` 자동 보호
+- 한도: 같은 chat 1msg/sec, 그룹 20msg/min, 글로벌 30msg/sec
+- 429 에러 시 자동 backoff + retry (최대 3회)
+- 적용 범위: mention 알림, 보고서 reply, 서무 DM, /broadcast, 모든 발송
 
 ### 보고서 처리 (자동) — 4단 다층 방어
 

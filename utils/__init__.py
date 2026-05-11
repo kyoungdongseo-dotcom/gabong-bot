@@ -208,10 +208,21 @@ def save_reminders(reminders):
     with open(REMINDERS_FILE, 'w') as f:
         json.dump(reminders, f, ensure_ascii=False)
 
-async def send_reminder(bot, chat_id, text):
-    GROUP_ID = config.get('group_id')
-    TOPIC_ID = config.get('topic_id')
-    await bot.send_message(chat_id=GROUP_ID, message_thread_id=TOPIC_ID, text=f"⏰ 리마인더\n\n{text}")
+async def send_reminder(bot, chat_id, text, topic_id=None):
+    """리마인더 발송. 등록한 chat_id/topic_id 로 전송.
+    chat_id=None 또는 0 이면 config 기본 그룹/토픽으로 폴백 (구버전 호환)."""
+    if not chat_id:
+        chat_id = config.get('group_id')
+        topic_id = config.get('topic_id')
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            message_thread_id=topic_id,
+            text=f"⏰ 리마인더\n\n{text}"
+        )
+        print(f"📩 리마인더 발송: chat={chat_id} topic={topic_id}")
+    except Exception as e:
+        print(f"❌ 리마인더 발송 실패: chat={chat_id} topic={topic_id} err={e}")
 
 async def send_broadcast_reminder(bot, text):
     BROADCAST_GROUPS = config.get('broadcast_groups')

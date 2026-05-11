@@ -20,13 +20,15 @@ async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_str = context.args[0]
     text = update.message.text.split(time_str + " ", 1)[1]
     chat_id = update.effective_chat.id
+    topic_id = update.message.message_thread_id
+    user_id = update.effective_user.id
     hour, minute = map(int, time_str.split(":"))
 
-    reminder_id = add_reminder(chat_id, None, "daily", text, time_str)
+    reminder_id = add_reminder(chat_id, topic_id, "daily", text, time_str, user_id=user_id)
     get_scheduler().add_job(
         send_reminder, 'cron',
         hour=hour, minute=minute,
-        args=[context.bot, chat_id, text],
+        args=[context.bot, chat_id, text, topic_id],
         id=str(reminder_id)
     )
     await update.message.reply_text(f"✅ 매일 {time_str}에 알림 등록! (ID: {reminder_id})")
@@ -45,14 +47,16 @@ async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_str = context.args[1]
     text = update.message.text.split(time_str + " ", 1)[1]
     chat_id = update.effective_chat.id
+    topic_id = update.message.message_thread_id
+    user_id = update.effective_user.id
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
     hour, minute = map(int, time_str.split(":"))
 
-    reminder_id = add_reminder(chat_id, None, "weekly", text, time_str, days_str)
+    reminder_id = add_reminder(chat_id, topic_id, "weekly", text, time_str, days_str, user_id=user_id)
     get_scheduler().add_job(
         send_reminder, 'cron',
         day_of_week=days_en, hour=hour, minute=minute,
-        args=[context.bot, chat_id, text],
+        args=[context.bot, chat_id, text, topic_id],
         id=str(reminder_id)
     )
     await update.message.reply_text(f"✅ 매주 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
@@ -71,14 +75,16 @@ async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_str = context.args[1]
     text = update.message.text.split(time_str + " ", 1)[1]
     chat_id = update.effective_chat.id
+    topic_id = update.message.message_thread_id
+    user_id = update.effective_user.id
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
     hour, minute = map(int, time_str.split(":"))
 
-    reminder_id = add_reminder(chat_id, None, "biweekly", text, time_str, days_str)
+    reminder_id = add_reminder(chat_id, topic_id, "biweekly", text, time_str, days_str, user_id=user_id)
     get_scheduler().add_job(
         send_reminder, 'cron',
         day_of_week=days_en, hour=hour, minute=minute, week="*/2",
-        args=[context.bot, chat_id, text],
+        args=[context.bot, chat_id, text, topic_id],
         id=str(reminder_id)
     )
     await update.message.reply_text(f"✅ 2주마다 {days_str} {time_str}에 알림 등록! (ID: {reminder_id})")
@@ -97,13 +103,16 @@ async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_str = context.args[1]
     text = update.message.text.split(time_str + " ", 1)[1]
     chat_id = update.effective_chat.id
+    topic_id = update.message.message_thread_id
+    user_id = update.effective_user.id
     hour, minute = map(int, time_str.split(":"))
 
-    reminder_id = add_reminder(chat_id, None, "monthly", text, time_str, day_of_month=int(day))
+    reminder_id = add_reminder(chat_id, topic_id, "monthly", text, time_str,
+                               day_of_month=int(day), user_id=user_id)
     get_scheduler().add_job(
         send_reminder, 'cron',
         day=day, hour=hour, minute=minute,
-        args=[context.bot, chat_id, text],
+        args=[context.bot, chat_id, text, topic_id],
         id=str(reminder_id)
     )
     await update.message.reply_text(f"✅ 매월 {day}일 {time_str}에 알림 등록! (ID: {reminder_id})")

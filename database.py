@@ -31,6 +31,15 @@ def init_db():
             is_active   INTEGER DEFAULT 1
         )
     """)
+    # user_id 컬럼 idempotent 마이그레이션 (Phase 1: 사용자별 추적 인프라)
+    try:
+        cols = c.execute("PRAGMA table_info(reminders)").fetchall()
+        col_names = [col[1] for col in cols]
+        if 'user_id' not in col_names:
+            c.execute("ALTER TABLE reminders ADD COLUMN user_id INTEGER")
+            print("✅ reminders.user_id 컬럼 추가됨 (마이그레이션)")
+    except Exception as e:
+        print(f"⚠️ reminders user_id 마이그레이션 실패: {e}")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -150,17 +159,45 @@ def init_db():
     conn.close()
     print("✅ DB 초기화 완료")
 
-def add_reminder(group_id, topic_id, r_type, message, time=None, day_of_week=None, day_of_month=None) -> int:
-    """리마인더 추가 후 생성된 ID 반환"""
+def add_reminder(group_id, topic_id, r_type, message, time=None,
+                 day_of_week=None, day_of_month=None, user_id=None) -> int:
+    """리마인더 추가 후 생성된 ID 반환. user_id 옵션 (Phase 1: 인프라)."""
     conn = get_conn()
     cursor = conn.execute("""
-        INSERT INTO reminders (group_id, topic_id, type, message, time, day_of_week, day_of_month)
-        VALUES (?,?,?,?,?,?,?)
-    """, (group_id, topic_id, r_type, message, time, day_of_week, day_of_month))
+        INSERT INTO reminders
+        (group_id, topic_id, type, message, time, day_of_week, day_of_month, user_id)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, (group_id, topic_id, r_type, message, time, day_of_week, day_of_month, user_id))
     conn.commit()
     inserted_id = cursor.lastrowid
     conn.close()
     return inserted_id
+
+
+def count_user_reminders(user_id: int) -> int:
+    """사용자가 등록한 활성 리마인더 개수 (Phase 2 준비)"""
+    if not user_id:
+        return 0
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) c FROM reminders WHERE user_id=? AND is_active=1",
+        (user_id,)
+    ).fetchone()
+    conn.close()
+    return row['c'] if row else 0
+
+
+def get_user_reminders(user_id: int) -> list:
+    """사용자가 등록한 활성 리마인더 목록 (Phase 2 준비)"""
+    if not user_id:
+        return []
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM reminders WHERE user_id=? AND is_active=1 ORDER BY id",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def get_reminders(r_type=None, group_id=None):
     """리마인더 조회"""

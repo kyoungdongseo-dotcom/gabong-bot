@@ -23,14 +23,22 @@ def _add_job(scheduler, r: dict, bot):
     스케줄러가 이미 실행 중일 때 호출되므로 replace_existing=True.
 
     SQLite 필드:
-      id (int), group_id (str), type (str), message (str),
-      time ("HH:MM"), day_of_week ("월,수"), day_of_month (int)
+      id (int), group_id (str), topic_id (int), user_id (int), type (str),
+      message (str), time ("HH:MM"), day_of_week ("월,수"), day_of_month (int)
     """
     rid = str(r["id"])
     r_type = r.get("type", "")
     time_str = r.get("time") or "00:00"
     message = r.get("message", "")
-    group_id = r.get("group_id")  # send_reminder가 내부적으로 GROUP_ID 사용
+    group_id = r.get("group_id")
+    topic_id = r.get("topic_id")  # 등록한 토픽 (NULL 이면 send_reminder 가 config 폴백)
+
+    # group_id 가 텍스트로 저장됐다면 int 변환
+    try:
+        if group_id is not None:
+            group_id = int(group_id)
+    except (ValueError, TypeError):
+        pass
 
     try:
         hour, minute = map(int, time_str.split(":"))
@@ -43,7 +51,7 @@ def _add_job(scheduler, r: dict, bot):
             scheduler.add_job(
                 send_reminder, 'cron',
                 hour=hour, minute=minute,
-                args=[bot, group_id, message],
+                args=[bot, group_id, message, topic_id],
                 id=rid, replace_existing=True
             )
 
@@ -57,7 +65,7 @@ def _add_job(scheduler, r: dict, bot):
             kw = dict(
                 day_of_week=days_en,
                 hour=hour, minute=minute,
-                args=[bot, group_id, message],
+                args=[bot, group_id, message, topic_id],
                 id=rid, replace_existing=True
             )
             if r_type == "biweekly":
@@ -69,7 +77,7 @@ def _add_job(scheduler, r: dict, bot):
                 send_reminder, 'cron',
                 day=r.get("day_of_month", 1),
                 hour=hour, minute=minute,
-                args=[bot, group_id, message],
+                args=[bot, group_id, message, topic_id],
                 id=rid, replace_existing=True
             )
 

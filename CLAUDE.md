@@ -276,6 +276,14 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - `/broadcast_remind_*` — 13개 그룹 일괄
 - `/my_reminders`, `/delete_reminder`
 
+**리마인더 시스템 정상화 (2026-05-11 Phase 1)**:
+- 등록한 그룹/토픽으로 정확히 발송됨 (`send_reminder` 수정)
+- DB 컬럼: `group_id`, `topic_id`, `user_id` 모두 저장
+- 봇 재시작 시 topic_id 함께 복원
+- broadcast_remind_* 는 13개 그룹 일괄 발송 (변경 없음)
+- 발송 로그: `📩 리마인더 발송: chat=N topic=N`
+- Phase 2 (일반 사용자 확장) 인프라 준비됨 (1주 안정화 후 결정)
+
 ### 👥 일반 사용자 (누구나)
 - `/help` — 도움말 (인라인 버튼)
 - `/myreports` — 본인 제출 이력 30일

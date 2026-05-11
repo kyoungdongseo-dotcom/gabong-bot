@@ -310,6 +310,18 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   - 1건의 fail 이 동일 user 의 직후 보고서들도 fail 로 잘못 판정 (2026-05-11 버그 수정)
 - DB 스키마에 `message_id` 컬럼 있음 → SQL 작성 시 항상 포함
 
+### 📅 /schedule 봉사 일정 (2026-05-11 다중 블록 지원)
+- 봉사달력 시트는 **주별 블록** 구조 (5월부터):
+  - 행 18 = 1주차 날짜 (3, 4, 5, 6, 7, 8, 9)
+  - 행 19~30 = 1주차 봉사 내용
+  - 행 39 = 2주차 날짜 (10~16), 행 40~ = 2주차 봉사
+  - 3주차, 4주차, 5주차 동일 패턴
+- `is_date_header()`: 5개 이상 셀이 1~31 정수면 헤더로 판정
+- `find_week_blocks()`: 헤더부터 다음 헤더 직전까지를 블록으로 그룹화
+- `parse_schedule_from_rows()`: 모든 블록 스캔 → `this_week_range()` 으로 필터링
+- 매월 새 시트 자동 처리 (구조 동일 가정) — 6월/7월/... 자동 작동
+- 변경 시 `print("[/schedule] 발견 블록 수: N")` 로그로 검증
+
 ### 📋 스프레드시트 변경 감지
 - `utils.check_changes` — 60초 폴링, 행 5~9 모니터링
 - **디바운싱 30분**: 같은 행 알림 후 30분 내 추가 변경 silent skip

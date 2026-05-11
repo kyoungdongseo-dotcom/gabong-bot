@@ -86,28 +86,67 @@ def read_sheet_values():
     ).execute()
     return result.get('values', [])
 
+def is_date_header(row) -> bool:
+    """날짜 헤더 행 판정: 5개 이상 셀이 1~31 정수이면 헤더"""
+    if not row:
+        return False
+    numeric_count = 0
+    for cell in row:
+        s = str(cell).strip()
+        if s.isdigit() and 1 <= int(s) <= 31:
+            numeric_count += 1
+    return numeric_count >= 5
+
+
+def find_week_blocks(rows):
+    """주별 블록 탐색: [{'date_row': idx, 'service_rows': [idx, ...]}, ...]
+    날짜 헤더부터 다음 날짜 헤더 직전까지를 한 블록으로 본다.
+    (2026-05-11 다중 주차 지원 추가 — 5월 시트가 주별 블록 구조로 작성됨)
+    """
+    blocks = []
+    i = 0
+    n = len(rows)
+    while i < n:
+        if is_date_header(rows[i]):
+            j = i + 1
+            services = []
+            while j < n and not is_date_header(rows[j]):
+                if rows[j]:
+                    services.append(j)
+                j += 1
+            blocks.append({'date_row': i, 'service_rows': services})
+            i = j
+        else:
+            i += 1
+    return blocks
+
+
 def parse_schedule_from_rows(rows):
-    """봉사 일정 파싱: rows[17]=날짜행, rows[18:43]=봉사내용"""
+    """다중 블록 처리: 모든 주 블록 스캔 → 이번 주 범위만 필터링"""
     week_start, week_end = this_week_range()
     year = datetime.now(KST).year
     day_events = {}
 
-    if len(rows) <= 17:
-        return day_events
+    blocks = find_week_blocks(rows)
+    print(f"[/schedule] 발견 블록 수: {len(blocks)}")
 
-    date_row = rows[17]
-
-    for col_idx, date_str in enumerate(date_row):
-        dt = parse_date(str(date_str), year)
-        if dt and week_start <= dt.date() <= week_end:
+    for block in blocks:
+        date_row = rows[block['date_row']]
+        for col_idx, date_str in enumerate(date_row):
+            dt = parse_date(str(date_str), year)
+            if not dt or not (week_start <= dt.date() <= week_end):
+                continue
             date_key = dt.date()
-            if not day_events.get(date_key):
-                day_events[date_key] = []
-            for row_idx in range(18, min(43, len(rows))):
-                if col_idx < len(rows[row_idx]):
-                    event = str(rows[row_idx][col_idx]).strip()
-                    if event and event != "" and not event.isdigit() and not parse_date(event, year):
-                        day_events[date_key].append(event)
+            day_events.setdefault(date_key, [])
+            for row_idx in block['service_rows']:
+                row = rows[row_idx]
+                if col_idx >= len(row):
+                    continue
+                event = str(row[col_idx]).strip()
+                if event and not event.isdigit() and not parse_date(event, year):
+                    day_events[date_key].append(event)
+            print(f"[/schedule] 블록 row={block['date_row']} col={col_idx} 날짜={date_key} 봉사={len(day_events[date_key])}건")
+
     return day_events
 
 def read_council_sheet_values():

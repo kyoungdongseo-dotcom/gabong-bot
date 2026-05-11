@@ -534,7 +534,12 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                 text=f"📣 멘션/호출 알림!\n\n그룹: {group_name}\n보낸 사람: {sender}\n내용: {text}\n\n답변하려면: /reply [내용]"
             )
 
-    MENTION_KEYWORDS = config.get('mention_keywords')
+    # 긴 키워드 먼저 매칭 (substring 가로채기 방지)
+    # 예: '사공과장님' (5) → '사공과장' (4) → '과장님' (3) 순서 보장
+    MENTION_KEYWORDS = dict(sorted(
+        (config.get('mention_keywords') or {}).items(),
+        key=lambda kv: -len(kv[0])
+    ))
     EXCLUDE_GROUPS = config.get('exclude_groups')
     TOPIC_IDS = config.get('topic_ids')
     PARTIAL_EXCLUDE = config.get('partial_exclude_groups') or {}

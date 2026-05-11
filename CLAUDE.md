@@ -316,7 +316,9 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
   - 행 19~30 = 1주차 봉사 내용
   - 행 39 = 2주차 날짜 (10~16), 행 40~ = 2주차 봉사
   - 3주차, 4주차, 5주차 동일 패턴
-- `is_date_header()`: 5개 이상 셀이 1~31 정수면 헤더로 판정
+- `is_date_header()`: **7개 모두** 1~31 정수면 헤더로 판정 (봉사달력 7일 기준, 2026-05-11 임계값 강화)
+  - 임계값 7로 false-positive 완전 차단 — 봉사 내용 행에 숫자 있어도 오인 X
+  - 미래 시트 구조 변경 시에도 안전 (7일 가정 유지되는 한)
 - `find_week_blocks()`: 헤더부터 다음 헤더 직전까지를 블록으로 그룹화
 - `parse_schedule_from_rows()`: 모든 블록 스캔 → `this_week_range()` 으로 필터링
 - 매월 새 시트 자동 처리 (구조 동일 가정) — 6월/7월/... 자동 작동

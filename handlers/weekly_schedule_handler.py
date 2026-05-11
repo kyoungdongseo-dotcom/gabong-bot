@@ -87,7 +87,9 @@ def read_sheet_values():
     return result.get('values', [])
 
 def is_date_header(row) -> bool:
-    """날짜 헤더 행 판정: 5개 이상 셀이 1~31 정수이면 헤더"""
+    """7개 모두 1~31 정수이면 날짜 헤더로 판정 (봉사달력 7일 기준).
+    임계값 7로 false-positive 완전 차단 — 봉사 내용 행이 숫자를 포함해도 오인 X.
+    """
     if not row:
         return False
     numeric_count = 0
@@ -95,7 +97,7 @@ def is_date_header(row) -> bool:
         s = str(cell).strip()
         if s.isdigit() and 1 <= int(s) <= 31:
             numeric_count += 1
-    return numeric_count >= 5
+    return numeric_count >= 7
 
 
 def find_week_blocks(rows):

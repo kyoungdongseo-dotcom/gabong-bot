@@ -35,3 +35,14 @@ config.json
 credentials.json
 serviceAccountKey.json
 data/
+
+# 세계경제뉴스 프로젝트 (별도 저장소로 이동)
+세계경제뉴스_*/
+세계경제카드뉴스*/
+AUTO_SETUP_README.md
+SETUP_COMPLETE.md
+DAILY_GUIDE.sh
+apply_permissions.py
+auto_generate_news.py
+news_data.json
+setup_scheduler.sh

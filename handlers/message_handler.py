@@ -356,6 +356,14 @@ async def process_media_group(context, media_group_id: str):
     if caption:
         report = parse_report(caption)
         if report:
+            from database import log_report_stage
+            log_report_stage('service', 'received', 'ok',
+                             user_id=user_id, chat_id=chat_id,
+                             topic_id=origin.get('message_thread_id'),
+                             message_id=origin.get('message_id'),
+                             detail=caption[:120])
+            log_report_stage('service', 'parsed', 'ok', user_id=user_id,
+                             detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
             report['_origin'] = origin
             await reply_to_origin(
                 context.bot, origin,
@@ -443,6 +451,14 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
         if caption:
             report = parse_report(caption)
             if report:
+                from database import log_report_stage
+                log_report_stage('service', 'received', 'ok',
+                                 user_id=user_id, chat_id=chat_id,
+                                 topic_id=thread_id,
+                                 message_id=update.message.message_id,
+                                 detail=caption[:120])
+                log_report_stage('service', 'parsed', 'ok', user_id=user_id,
+                                 detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
                 report['_origin'] = origin
                 await reply_to_origin(context.bot, origin, "✅ 봉사보고서 접수 - 처리 중")
                 await finalize_report(context, report, [photo_url],

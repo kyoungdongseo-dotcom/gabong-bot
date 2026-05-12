@@ -372,6 +372,14 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - 메모리 dict (`LAST_SHEET_NOTIFY`, 봇 재시작 시 초기화)
 - 로그: `📋 sheet 변경 감지 → 알림` / `⏸️ sheet 알림 디바운싱`
 
+### 📋 봉사보고서 received/parsed 기록 (2026-05-12 보강)
+- **3개 finalize 직행 경로 모두 received + parsed 기록 보장**:
+  1. handle_all_messages (텍스트만 또는 텍스트+사진): line 522 (기존)
+  2. process_media_group caption 분기 (사진 album + caption): line 360 (신규)
+  3. handle_photo_messages 케이스 B (단일 사진 + caption): line 455 (신규)
+- **누락 시 영향**: /myreports 에서 0건 표시, 통계 왜곡
+- 호출 패턴 통일: `log_report_stage('service', 'received', 'ok', user_id=, chat_id=, topic_id=, message_id=, detail=)` + `parsed`
+
 ### 📸 사진 처리 (2026-05-12 업데이트)
 - caption 없는 album 도 `PENDING_PHOTOS` 에 저장 (TTL 600초)
 - 사용자에게 "📸 사진 N장 접수 — 보고서 형식 텍스트도 보내주세요" 안내

@@ -117,11 +117,50 @@ def cleanup_tmp_docx(max_age_hours: int = 24) -> int:
         return -1
 
 
+def cleanup_memory_dicts() -> dict:
+    """모듈 레벨 dict 의 stale 엔트리 정리.
+    - TRIGGER_HISTORY: 윈도우 밖 timestamp 만 남은 user_id 키 제거
+    - CHAT_HISTORY / GROUP_MESSAGES: 빈 list 키 제거
+    Why: dict 키 누적 (sliding window 가 값만 정리하고 키는 영원히 잔존) 안전망.
+    """
+    import time
+    from handlers.message_handler import (
+        MENTION_TRIGGER_HISTORY, MENTION_WINDOW,
+        MY_KEYWORD_TRIGGER_HISTORY, MY_KEYWORD_WINDOW,
+    )
+    from utils import CHAT_HISTORY, GROUP_MESSAGES
+
+    now = time.time()
+    cleaned = {}
+
+    for name, d, window in [
+        ('MENTION', MENTION_TRIGGER_HISTORY, MENTION_WINDOW),
+        ('MY_KEYWORD', MY_KEYWORD_TRIGGER_HISTORY, MY_KEYWORD_WINDOW),
+    ]:
+        before = len(d)
+        for k in list(d.keys()):
+            d[k] = [t for t in d[k] if now - t < window]
+            if not d[k]:
+                d.pop(k, None)
+        cleaned[name] = before - len(d)
+
+    for name, d in [('CHAT_HISTORY', CHAT_HISTORY), ('GROUP_MESSAGES', GROUP_MESSAGES)]:
+        before = len(d)
+        for k in list(d.keys()):
+            if not d[k]:
+                d.pop(k, None)
+        cleaned[name] = before - len(d)
+
+    print(f"🧹 메모리 cleanup: {cleaned}")
+    return cleaned
+
+
 async def run_daily_cleanup(bot=None):
-    """매일 03:30 — 24h 이전 recent_submissions 정리"""
+    """매일 03:30 — 24h 이전 recent_submissions 정리 + 메모리 dict 정리"""
     from database import cleanup_recent_submissions
     loop = asyncio.get_running_loop()
     deleted = await loop.run_in_executor(None, cleanup_recent_submissions, 86400)
+    await loop.run_in_executor(None, cleanup_memory_dicts)
     if bot and deleted < 0:
         try:
             await bot.send_message(

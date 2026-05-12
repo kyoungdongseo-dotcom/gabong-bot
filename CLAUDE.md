@@ -372,6 +372,13 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - 메모리 dict (`LAST_SHEET_NOTIFY`, 봇 재시작 시 초기화)
 - 로그: `📋 sheet 변경 감지 → 알림` / `⏸️ sheet 알림 디바운싱`
 
+### 🧹 메모리 관리 (2026-05-12 추가)
+- `/status`: 모듈 레벨 dict 크기 표시 (MENTION/MY_KEYWORD/CHAT/GROUP/PENDING/MEDIA_CACHE)
+- `daily_cleanup` (03:30) 에 `cleanup_memory_dicts()` 통합:
+  - TRIGGER_HISTORY: 윈도우 밖 timestamp 만 남은 user_id 키 제거
+  - CHAT_HISTORY / GROUP_MESSAGES: 빈 list 키 제거
+- 1000명 확장 시 cleanup 빈도 / TTL cap 재평가 권장
+
 ### 🛡️ 텔레그램 한도 자동 보호 (AIORateLimiter)
 - `main.py` ApplicationBuilder 에 `AIORateLimiter(max_retries=3)` 적용
 - PTB v22 내장 — 모든 `send_message` / `send_document` 자동 보호

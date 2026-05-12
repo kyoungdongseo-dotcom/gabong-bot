@@ -80,6 +80,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_backup = _get_last_backup()
     commit = _get_last_commit()
 
+    # 메모리 dict (Phase B 모니터링) — import 는 함수 내에서 (circular 방지)
+    from handlers.message_handler import (
+        MENTION_TRIGGER_HISTORY, MY_KEYWORD_TRIGGER_HISTORY,
+        PENDING_REPORTS, PENDING_PHOTOS, MEDIA_GROUP_CACHE,
+    )
+    from utils import CHAT_HISTORY, GROUP_MESSAGES
+
     text = (
         f"🤖 봇 상태\n"
         f"\n"
@@ -95,6 +102,15 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤖 Claude API: {api_status}\n"
         f"📊 Google Sheets: {sheets_status}\n"
         f"💾 마지막 백업: {last_backup}\n"
+        f"\n"
+        f"📊 메모리 dict (keys):\n"
+        f"  • MENTION_HISTORY: {len(MENTION_TRIGGER_HISTORY)}\n"
+        f"  • MY_KEYWORD_HISTORY: {len(MY_KEYWORD_TRIGGER_HISTORY)}\n"
+        f"  • CHAT_HISTORY: {len(CHAT_HISTORY)}\n"
+        f"  • GROUP_MESSAGES: {len(GROUP_MESSAGES)}\n"
+        f"  • PENDING_REPORTS: {len(PENDING_REPORTS)}\n"
+        f"  • PENDING_PHOTOS: {len(PENDING_PHOTOS)}\n"
+        f"  • MEDIA_GROUP_CACHE: {len(MEDIA_GROUP_CACHE)}\n"
         f"\n"
         f"📅 스케줄 job ({len(jobs)}개):\n"
         f"{job_list}"

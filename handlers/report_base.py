@@ -1,10 +1,8 @@
 """3개 보고서(봉사/MOU/수상) 공통 베이스 유틸리티"""
 
 import asyncio
-import os
 import tempfile
 import time
-from datetime import datetime
 
 import pytz
 import requests
@@ -96,11 +94,6 @@ def with_sheet_retry(save_fn, data, retries: int = 3) -> bool:
     return False
 
 
-def format_alias_hint(field: str, aliases_dict: dict) -> str:
-    aliases = aliases_dict.get(field, [field])
-    return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
-
-
 # ── 사진 다운로드 ──────────────────────────────────────────────────────────────
 
 def download_photo(url: str, retries: int = 3, delay: int = 5) -> str | None:
@@ -152,19 +145,6 @@ def set_cell_bg(cell, color: str):
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), color)
     tcPr.append(shd)
-
-
-def docx_label(cell, text: str):
-    cell.text = text
-    run = cell.paragraphs[0].runs[0]
-    run.bold = True
-    run.font.size = Pt(10)
-    set_cell_bg(cell, 'D5E8F0')
-
-
-def docx_value(cell, text: str):
-    cell.text = text or '-'
-    cell.paragraphs[0].runs[0].font.size = Pt(10)
 
 
 def add_photos_grid(doc, photo_paths: list, title: str = '사진'):
@@ -237,170 +217,6 @@ def format_photo_count_msg(total: int, ignored: int = 0,
     if total >= max_total:
         return f"📸 {total}/{max_total}장 접수 (이후 추가 사진은 무시됩니다)"
     return f"📸 {total}/{max_total}장 접수"
-
-
-async def flush_pending_generic(
-    pending_dict: dict,
-    key,
-    finalize_callback,
-    initial_wait: int = 60,
-    max_wait: int = 300,
-    photo_idle: int = 5,
-):
-    """공통 flush: 60초 후 사진 idle 5초까지 연장 (max_wait까지)"""
-    start = time.time()
-    await asyncio.sleep(initial_wait)
-    while True:
-        entry = pending_dict.get(key)
-        if not entry or entry.get('saved'):
-            return
-        last_photo = entry.get('last_photo_time', 0)
-        elapsed = time.time() - start
-        if last_photo > 0 and (time.time() - last_photo) < photo_idle and elapsed < max_wait:
-            await asyncio.sleep(photo_idle)
-            continue
-        break
-    entry = pending_dict.pop(key, None)
-    if not entry or entry.get('saved'):
-        return
-    entry['saved'] = True
-    await finalize_callback(entry)
-
-
-# ── 앨범(media_group) 처리 ────────────────────────────────────────────────────
-
-async def process_album_generic(
-    media_group_id: str,
-    cache: dict,
-    on_complete,
-    wait_seconds: int = 3,
-):
-    """앨범 사진 모두 도착 대기 후 콜백 호출.
-    cache[media_group_id] = {'photos': list, 'caption': str, 'processed': bool, 'created': float, ...}
-    on_complete(entry) 호출.
-    """
-    await asyncio.sleep(wait_seconds)
-    entry = cache.get(media_group_id)
-    if not entry or entry.get('processed'):
-        return
-    cache[media_group_id]['processed'] = True
-    try:
-        await on_complete(entry)
-    finally:
-        # TTL 만료된 캐시 정리
-        now = time.time()
-        expired = [k for k, v in list(cache.items()) if now - v.get('created', 0) > 300]
-        for k in expired:
-            cache.pop(k, None)
-
-
-# ── 공통 finalize ─────────────────────────────────────────────────────────────
-
-async def finalize_generic(
-    bot,
-    *,
-    data: dict,
-    photos: list,
-    name: str,
-    name_emoji: str,
-    recipient_id: int,
-    save_to_sheet,
-    generate_docx,
-    docx_filename_fn,
-    summary_fn,
-    output_prefix: str,
-):
-    """3개 보고서 공통 finalize.
-    save_to_sheet(data) -> bool
-    generate_docx(data, list_of_photo_paths, output_path) -> bool
-    docx_filename_fn(data) -> str
-    summary_fn(data) -> str
-    """
-    try:
-        # 사진 URL을 사진1~5링크로 저장
-        for i in range(1, 6):
-            data[f'사진{i}링크'] = photos[i-1] if i <= len(photos) else ''
-
-        loop = asyncio.get_running_loop()
-
-        # 시트 저장
-        try:
-            sheet_ok = await loop.run_in_executor(None, save_to_sheet, data)
-        except Exception as e:
-            sheet_ok = False
-            print(f"❌ {name} 시트 저장 예외: {e}")
-
-        # 사진 다운로드 (병렬)
-        tmp_files, photo_failed = await download_photos_batch(photos[:5])
-
-        # Word 생성
-        now_str = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
-        output_path = f"/tmp/{output_prefix}_{now_str}.docx"
-        try:
-            docx_ok = await loop.run_in_executor(
-                None, generate_docx, data, tmp_files, output_path
-            )
-        except Exception as e:
-            docx_ok = False
-            print(f"❌ {name} Word 생성 예외: {e}")
-
-        for tmp in tmp_files:
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-
-        # 요약
-        body = summary_fn(data)
-        emoji = '✅' if sheet_ok else '⚠️'
-        summary = f"{emoji} {name} 처리 결과\n{body}"
-        warnings = []
-        if not sheet_ok:
-            warnings.append("스프레드시트 저장 실패 — 수동 저장 필요")
-        if not docx_ok:
-            warnings.append("Word 파일 생성 실패 — 텍스트만 저장됨")
-        if photo_failed > 0:
-            warnings.append(f"사진 {photo_failed}장 다운로드 실패 (파일 링크 만료 가능)")
-        if photos:
-            summary += f"\n\n📸 사진 {len(photos)}장 첨부"
-        if warnings:
-            summary += "\n\n⚠️ " + "\n⚠️ ".join(warnings)
-
-        await send_to_recipient(bot, recipient_id, text=summary)
-
-        # Word 파일 전송
-        if docx_ok and os.path.exists(output_path):
-            try:
-                with open(output_path, 'rb') as f:
-                    await send_to_recipient(
-                        bot, recipient_id,
-                        document=f,
-                        filename=docx_filename_fn(data),
-                        caption=f"{name_emoji} {name} Word 파일"
-                    )
-            finally:
-                try:
-                    os.remove(output_path)
-                except Exception:
-                    pass
-    except Exception as e:
-        import traceback
-        await notify_admin(
-            bot,
-            f"❌ {name} 처리 중 예외 발생: {e}\n"
-            f"데이터: {str(data)[:300]}\n"
-            f"{traceback.format_exc()[:1000]}"
-        )
-
-
-# ── 시간 헬퍼 ──────────────────────────────────────────────────────────────────
-
-def now_kst_str(fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
-    return datetime.now(KST).strftime(fmt)
-
-
-def now_kst_filename() -> str:
-    return datetime.now(KST).strftime('%Y%m%d_%H%M%S')
 
 
 # ── 중복 제출 감지 (dedup) ────────────────────────────────────────────────────

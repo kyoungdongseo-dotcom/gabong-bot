@@ -43,7 +43,7 @@ def ensure_single_instance():
         except (ProcessLookupError, ValueError):
             pass
         except PermissionError:
-            print(f"[PID] 이전 봇 종료 권한 없음 - 무시")
+            print("[PID] 이전 봇 종료 권한 없음 - 무시")
     with open(PID_FILE, 'w') as f:
         f.write(str(os.getpid()))
     atexit.register(_cleanup_pid)

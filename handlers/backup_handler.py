@@ -126,7 +126,7 @@ async def run_daily_cleanup(bot=None):
         try:
             await bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"⚠️ daily cleanup 실패: recent_submissions"
+                text="⚠️ daily cleanup 실패: recent_submissions"
             )
         except Exception:
             pass

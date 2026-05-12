@@ -92,27 +92,27 @@ def analyze_weekly_report() -> str:
         week_num = (week_start.day - 1) // 7 + 1
 
         lines = [
-            f"📊 총회봉사교통부 주간 봉사 분석",
-            f"━━━━━━━━━━━━━━━━━━",
+            "📊 총회봉사교통부 주간 봉사 분석",
+            "━━━━━━━━━━━━━━━━━━",
             f"📅 {week_start.year}년 {week_start.month}월 {week_num}주차 ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')})",
-            f"",
+            "",
             f"✅ 총 봉사 건수: {total_count}건",
             f"✅ 총 봉사자: {total_volunteers:,}명 (내부 {total_inner:,}명 / 외부 {total_outer:,}명)",
             f"✅ 총 수혜자: {total_beneficiary:,}명",
-            f"",
-            f"📌 봉사분류별",
+            "",
+            "📌 봉사분류별",
         ]
 
         for cat, cnt in sorted(category_count.items(), key=lambda x: -x[1])[:5]:
             lines.append(f"  • {cat}: {cnt}건")
 
-        lines.append(f"")
-        lines.append(f"📌 지파별 활동 TOP5")
+        lines.append("")
+        lines.append("📌 지파별 활동 TOP5")
         for i, (jipa, cnt) in enumerate(sorted(jipa_count.items(), key=lambda x: -x[1])[:5], 1):
             lines.append(f"  {i}. {jipa}: {cnt}건")
 
-        lines.append(f"")
-        lines.append(f"📌 활동지역 TOP3")
+        lines.append("")
+        lines.append("📌 활동지역 TOP3")
         for i, (region, cnt) in enumerate(sorted(region_count.items(), key=lambda x: -x[1])[:3], 1):
             lines.append(f"  {i}. {region}: {cnt}건")
 
@@ -132,6 +132,6 @@ async def send_weekly_report(bot):
             chat_id=admin_id,
             text=report
         )
-        print(f"✅ 주간 분석 리포트 발송 완료")
+        print("✅ 주간 분석 리포트 발송 완료")
     except Exception as e:
         print(f"❌ 주간 분석 리포트 발송 오류: {e}")

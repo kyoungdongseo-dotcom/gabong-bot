@@ -86,7 +86,6 @@ def daily_analysis() -> str:
     # 봉사보고서 (지파명: col 1)
     service_rows = _read_sheet(sheet_id, SERVICE_SHEET_NAME)
     service_yesterday = _filter_by_date(service_rows, yesterday, 0)
-    service_by_jipa = _count_by_jipa(service_rows, 1) if service_rows else Counter()
     # 봉사 어제 지파별
     service_y_jipa = Counter()
     for row in service_yesterday:
@@ -163,7 +162,7 @@ async def send_daily_analysis(bot):
         loop = asyncio.get_running_loop()
         text = await loop.run_in_executor(None, daily_analysis)
         await bot.send_message(chat_id=ADMIN_USER_ID, text=text)
-        print(f"✅ 일일 분석 보고 발송 완료")
+        print("✅ 일일 분석 보고 발송 완료")
     except Exception as e:
         print(f"❌ 일일 분석 오류: {e}")
         try:
@@ -206,7 +205,6 @@ def monthly_stats() -> str:
             activity[str(row[1]).strip() or '미상'] += 1
 
     # 미제출 지파 (봉사 0건)
-    all_jipa = set(activity.keys())
     expected_jipa = {
         '도마', '다대오', '바돌', '안드레', '요한', '시몬', '맛디아',
         '서야', '빌립', '부야', '베드로', '마태'

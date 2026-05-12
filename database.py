@@ -174,31 +174,6 @@ def add_reminder(group_id, topic_id, r_type, message, time=None,
     return inserted_id
 
 
-def count_user_reminders(user_id: int) -> int:
-    """사용자가 등록한 활성 리마인더 개수 (Phase 2 준비)"""
-    if not user_id:
-        return 0
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT COUNT(*) c FROM reminders WHERE user_id=? AND is_active=1",
-        (user_id,)
-    ).fetchone()
-    conn.close()
-    return row['c'] if row else 0
-
-
-def get_user_reminders(user_id: int) -> list:
-    """사용자가 등록한 활성 리마인더 목록 (Phase 2 준비)"""
-    if not user_id:
-        return []
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM reminders WHERE user_id=? AND is_active=1 ORDER BY id",
-        (user_id,)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
 def get_reminders(r_type=None, group_id=None):
     """리마인더 조회"""
     conn = get_conn()
@@ -220,64 +195,6 @@ def delete_reminder(reminder_id):
     conn.execute("UPDATE reminders SET is_active=0 WHERE id=?", (reminder_id,))
     conn.commit()
     conn.close()
-
-def save_message(group_id, topic_id, user_name, text):
-    """메시지 저장"""
-    conn = get_conn()
-    conn.execute("""
-        INSERT INTO messages (group_id, topic_id, user_name, text)
-        VALUES (?,?,?,?)
-    """, (group_id, topic_id, user_name, text))
-    conn.commit()
-    conn.close()
-
-def get_messages(group_id, limit=100):
-    """메시지 조회"""
-    conn = get_conn()
-    rows = conn.execute("""
-        SELECT * FROM messages
-        WHERE group_id=?
-        ORDER BY created_at DESC LIMIT ?
-    """, (group_id, limit)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-def clear_messages(group_id):
-    """메시지 정리"""
-    conn = get_conn()
-    conn.execute("DELETE FROM messages WHERE group_id=?", (group_id,))
-    conn.commit()
-    conn.close()
-
-def set_state(key, value):
-    """상태값 저장"""
-    conn = get_conn()
-    conn.execute("""
-        INSERT OR REPLACE INTO bot_state (key, value, updated_at)
-        VALUES (?, ?, datetime('now','localtime'))
-    """, (key, json.dumps(value)))
-    conn.commit()
-    conn.close()
-
-def get_state(key, default=None):
-    """상태값 조회"""
-    conn = get_conn()
-    row = conn.execute("SELECT value FROM bot_state WHERE key=?", (key,)).fetchone()
-    conn.close()
-    if row:
-        return json.loads(row["value"])
-    return default
-
-def log_error(error_type, description, stack_trace=""):
-    """에러 로그"""
-    conn = get_conn()
-    conn.execute("""
-        INSERT INTO error_logs (error_type, description, stack_trace)
-        VALUES (?,?,?)
-    """, (error_type, description, stack_trace))
-    conn.commit()
-    conn.close()
-
 
 # ── PENDING 보고서 영속화 ─────────────────────────────────────────────────────
 
@@ -324,14 +241,6 @@ def load_pending_reports(report_type: str, max_age_sec: float = 600) -> list:
     return result
 
 
-def cleanup_pending_reports_db(max_age_sec: float = 600):
-    conn = get_conn()
-    threshold = datetime.now().timestamp() - max_age_sec
-    conn.execute("DELETE FROM pending_reports WHERE created < ?", (threshold,))
-    conn.commit()
-    conn.close()
-
-
 def save_pending_photos_db(report_type: str, pending_key: str,
                            photos: list, created: float):
     conn = get_conn()
@@ -370,14 +279,6 @@ def load_pending_photos_db(report_type: str, max_age_sec: float = 300) -> list:
             'created': r['created'],
         })
     return result
-
-
-def cleanup_pending_photos_db(max_age_sec: float = 300):
-    conn = get_conn()
-    threshold = datetime.now().timestamp() - max_age_sec
-    conn.execute("DELETE FROM pending_photos WHERE created < ?", (threshold,))
-    conn.commit()
-    conn.close()
 
 
 # ── 중복 제출 감지 ─────────────────────────────────────────────────────────────
@@ -448,31 +349,6 @@ def log_report_stage(report_type: str, stage: str, status: str,
         conn.close()
     except Exception as e:
         print(f"⚠️ report_log 기록 실패: {e}")
-
-
-def get_report_log_stats(report_type: str = None, hours: int = 24) -> dict:
-    """최근 N시간 단계별/상태별 통계"""
-    try:
-        conn = get_conn()
-        threshold = (datetime.now().timestamp() - hours * 3600)
-        threshold_str = datetime.fromtimestamp(threshold).strftime('%Y-%m-%d %H:%M:%S')
-        query = """
-            SELECT stage, status, COUNT(*) as cnt FROM report_log
-            WHERE created_at >= ?
-        """
-        params = [threshold_str]
-        if report_type:
-            query += " AND report_type=?"
-            params.append(report_type)
-        query += " GROUP BY stage, status"
-        rows = conn.execute(query, params).fetchall()
-        conn.close()
-        result = {}
-        for r in rows:
-            result.setdefault(r['stage'], {})[r['status']] = r['cnt']
-        return result
-    except Exception:
-        return {}
 
 
 def cleanup_report_log(max_age_days: int = 90) -> int:

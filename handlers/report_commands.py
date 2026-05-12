@@ -47,13 +47,13 @@ async def monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         lines = [
             f"📈 {month_start.year}년 {month_start.month}월 월간 봉사 통계",
-            f"━━━━━━━━━━━━━━━━━━",
-            f"",
+            "━━━━━━━━━━━━━━━━━━",
+            "",
             f"✅ 총 봉사 건수: {total_count}건",
             f"✅ 총 봉사자: {total_volunteers:,}명",
             f"✅ 총 수혜자: {total_beneficiary:,}명",
-            f"",
-            f"📌 주차별 현황",
+            "",
+            "📌 주차별 현황",
         ]
 
         for r in result_rows:
@@ -61,8 +61,8 @@ async def monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"  {r[2]}: {r[5]}건 / 봉사자 {r[8]:,}명 / 수혜자 {r[9]:,}명"
             )
 
-        lines.append(f"")
-        lines.append(f"✅ 월간통계 시트 저장 완료!")
+        lines.append("")
+        lines.append("✅ 월간통계 시트 저장 완료!")
 
         await update.message.reply_text("\n".join(lines))
 

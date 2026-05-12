@@ -159,13 +159,13 @@ async def send_monthly_stats(bot):
 
         lines = [
             f"📈 {month_start.year}년 {month_start.month}월 월간 봉사 통계",
-            f"━━━━━━━━━━━━━━━━━━",
-            f"",
+            "━━━━━━━━━━━━━━━━━━",
+            "",
             f"✅ 총 봉사 건수: {total_count}건",
             f"✅ 총 봉사자: {total_volunteers:,}명",
             f"✅ 총 수혜자: {total_beneficiary:,}명",
-            f"",
-            f"📌 주차별 현황",
+            "",
+            "📌 주차별 현황",
         ]
 
         for r in result_rows:
@@ -173,14 +173,14 @@ async def send_monthly_stats(bot):
                 f"  {r[2]}: {r[5]}건 / 봉사자 {r[8]:,}명 / 수혜자 {r[9]:,}명"
             )
 
-        lines.append(f"")
-        lines.append(f"✅ 월간통계 시트 자동 저장 완료!")
+        lines.append("")
+        lines.append("✅ 월간통계 시트 자동 저장 완료!")
 
         await bot.send_message(
             chat_id=config.get('my_user_id'),
             text="\n".join(lines)
         )
-        print(f"✅ 월간통계 리포트 발송 완료")
+        print("✅ 월간통계 리포트 발송 완료")
 
     except Exception as e:
         print(f"❌ 월간통계 발송 오류: {e}")

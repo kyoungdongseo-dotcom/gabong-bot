@@ -1,10 +1,9 @@
 import os
 import requests
 import tempfile
-from datetime import datetime
 import pytz
 from docx import Document
-from docx.shared import Pt, RGBColor, Cm, Inches
+from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement

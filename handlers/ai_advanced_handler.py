@@ -10,7 +10,6 @@ from utils import (
     fetch_weekly_messages,
     get_chat_mode,
     set_chat_mode,
-    log_message,
 )
 
 

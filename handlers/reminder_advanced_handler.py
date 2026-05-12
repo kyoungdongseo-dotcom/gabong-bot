@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 
 from telegram import Update
@@ -239,11 +238,11 @@ async def reminder_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         top_count = sorted_reminders[0].get("trigger_count", 0) if sorted_reminders else 0
         if top_count > 0:
-            analysis_text += f"• 가장 자주 사용하는 키워드로 자동화 설정을 고려해보세요\n"
+            analysis_text += "• 가장 자주 사용하는 키워드로 자동화 설정을 고려해보세요\n"
 
         keyword_triggers = sum(1 for r in sorted_reminders if r.get("trigger_count", 0) > 0)
         if keyword_triggers < 3:
-            analysis_text += f"• 더 많은 키워드 리마인더를 추가해보세요\n"
+            analysis_text += "• 더 많은 키워드 리마인더를 추가해보세요\n"
 
         await update.message.reply_text(analysis_text)
 

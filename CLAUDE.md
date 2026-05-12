@@ -380,6 +380,20 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - **누락 시 영향**: /myreports 에서 0건 표시, 통계 왜곡
 - 호출 패턴 통일: `log_report_stage('service', 'received', 'ok', user_id=, chat_id=, topic_id=, message_id=, detail=)` + `parsed`
 
+### 🎞️ album / media_group 처리 표준 (2026-05-12 추가)
+- `ALBUM_WAIT_SECONDS = 7` (handlers/message_handler.py 상단)
+  - 텔레그램 album 평균 도착 시간 마진
+  - 3초 였을 때 caption=NO 오판정 빈발 → 7초 안전 마진
+  - 변경 시 운영 모니터링 필수
+- caption 늦게 도착 가능성 인지 → **다층 안전망**:
+  1. 1차: 7초 sleep 으로 대부분 잡음
+  2. 2차: PENDING_PHOTOS 저장 + "사진만 접수" 안내 (어제 추가)
+  3. 3차 (필요 시 미래 작업): caption 도착 시 재처리
+- 측정 가능한 로그:
+  - `📸 album[봉사]: photos=N caption=YES/NO` — 비율 모니터링
+  - `📸 사진 N장 접수 — 보고서 형식 텍스트도` — 안전망 효과 측정
+- **동일 패턴**: `handlers/mou_handler.py:612`, `handlers/award_handler.py:636` 도 `sleep(3)` 사용 — 일관성 검토 후보
+
 ### 📸 사진 처리 (2026-05-12 업데이트)
 - caption 없는 album 도 `PENDING_PHOTOS` 에 저장 (TTL 600초)
 - 사용자에게 "📸 사진 N장 접수 — 보고서 형식 텍스트도 보내주세요" 안내

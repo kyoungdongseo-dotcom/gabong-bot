@@ -22,6 +22,10 @@ PENDING_PHOTOS = {}
 PHOTOS_TTL = 600   # 10분 — 여러 앨범 누적 시간 고려
 MAX_PHOTOS = 10
 
+# 텔레그램 album 평균 도착 시간 마진 (caption 늦게 도착 케이스 대비)
+# 3초였을 때 caption=NO 오판정 빈발 → 7초로 안전 마진 확보 (2026-05-12 변경)
+ALBUM_WAIT_SECONDS = 7
+
 # award(3553)/mou(3225) 토픽 — 해당 핸들러가 직접 처리
 EXCLUDED_TOPICS = {3553, 3225}
 
@@ -310,7 +314,7 @@ async def flush_pending_report(context, key):
 
 async def process_media_group(context, media_group_id: str):
     """앨범 사진 수집 완료 후 처리"""
-    await asyncio.sleep(3)
+    await asyncio.sleep(ALBUM_WAIT_SECONDS)
     cache = MEDIA_GROUP_CACHE.get(media_group_id)
     if not cache or cache.get('processed'):
         return

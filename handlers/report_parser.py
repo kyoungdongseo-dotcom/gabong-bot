@@ -26,7 +26,9 @@ _REPORT_KEY_ALIASES = {
 def parse_report(text: str) -> dict | None:
     if not text:
         return None
-    if '활동보고' not in text and '봉사보고' not in text:
+    # 띄어쓰기 무시 매칭 (예: "활동 보고", "봉사 보고서", "봉사 활동 보고" 모두 인식)
+    # Why: 자연스러운 한국어 띄어쓰기로 silent fail 방지 (2026-05-12)
+    if not re.search(r'(활동|봉사)\s*보고', text):
         return None
 
     result = {

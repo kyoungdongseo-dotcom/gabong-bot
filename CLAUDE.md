@@ -380,6 +380,15 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - **누락 시 영향**: /myreports 에서 0건 표시, 통계 왜곡
 - 호출 패턴 통일: `log_report_stage('service', 'received', 'ok', user_id=, chat_id=, topic_id=, message_id=, detail=)` + `parsed`
 
+### 📝 parse_report 매칭 정책 (2026-05-12 추가)
+- 키워드 매칭: 정규식 `r'(활동|봉사)\s*보고'`
+  - "활동보고", "봉사보고" — 기존
+  - "활동 보고", "봉사 보고", "봉사 활동 보고" — 신규 (띄어쓰기 허용)
+- **Why**: 자연스러운 한국어 띄어쓰기로 인한 silent fail 방지
+- **유사 위험 영역** (양식 매칭 너무 엄격):
+  - `handlers/award_handler.py`: `'수상' in caption and '보고' in caption` — 띄어쓰기 OK 지만 다른 패턴 부분
+  - `handlers/mou_handler.py:84`: 키워드 리스트 — 명시적 처리
+
 ### 🎞️ album / media_group 처리 표준 (2026-05-12 추가)
 - `ALBUM_WAIT_SECONDS = 7` (handlers/message_handler.py 상단)
   - 텔레그램 album 평균 도착 시간 마진

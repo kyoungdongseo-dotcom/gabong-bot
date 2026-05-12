@@ -372,6 +372,13 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - 메모리 dict (`LAST_SHEET_NOTIFY`, 봇 재시작 시 초기화)
 - 로그: `📋 sheet 변경 감지 → 알림` / `⏸️ sheet 알림 디바운싱`
 
+### 📸 사진 처리 (2026-05-12 업데이트)
+- caption 없는 album 도 `PENDING_PHOTOS` 에 저장 (TTL 600초)
+- 사용자에게 "📸 사진 N장 접수 — 보고서 형식 텍스트도 보내주세요" 안내
+- 텍스트 늦게 와도 같은 (chat, user) 키로 합쳐서 finalize
+- caption 있지만 parse 실패 (보고서 형식 X) 시에도 동일 보존
+- **기존**: caption 없으면 silent 폐기 → **변경**: 안전망 + 사용자 안내
+
 ### 🧹 메모리 관리 (2026-05-12 추가)
 - `/status`: 모듈 레벨 dict 크기 표시 (MENTION/MY_KEYWORD/CHAT/GROUP/PENDING/MEDIA_CACHE)
 - `daily_cleanup` (03:30) 에 `cleanup_memory_dicts()` 통합:

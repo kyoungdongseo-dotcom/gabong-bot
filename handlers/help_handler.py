@@ -183,8 +183,10 @@ async def myreports_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
     user_id = update.effective_user.id
+    print(f"📋 /myreports 호출: user_id={user_id}")
     from database import get_user_reports
     reports = get_user_reports(user_id, days=30)
+    print(f"📋 /myreports 결과: user_id={user_id} reports={len(reports)}건")
 
     if not reports:
         await update.message.reply_text(

@@ -363,6 +363,25 @@ async def process_media_group(context, media_group_id: str):
             )
             await finalize_report(context, report, photos,
                                   source="album_caption", origin=origin)
+            cleanup_media_cache()
+            return
+
+    # caption 없거나 보고서 형식 X → PENDING_PHOTOS 에 저장 (텍스트 늦게 와도 합쳐짐)
+    # Why: 기존엔 silent 폐기. 사용자가 사진 따로 + 텍스트 따로 보내는 패턴 보존.
+    if photos:
+        from handlers.report_base import add_photos_to_pending
+        cleanup_pending_photos()
+        add_photos_to_pending(
+            PENDING_PHOTOS, pending_key, photos, MAX_PHOTOS,
+            init_extra={'created': time.time(), 'origin': origin}
+        )
+        try:
+            await reply_to_origin(
+                context.bot, origin,
+                f"📸 사진 {len(photos)}장 접수 — 보고서 형식 텍스트도 보내주세요"
+            )
+        except Exception as e:
+            print(f"⚠️ 사진 접수 안내 실패: {e}")
 
     cleanup_media_cache()
 

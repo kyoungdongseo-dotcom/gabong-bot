@@ -23,6 +23,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📢 관리자 전용 — 공지
 /notice [내용] - 총회봉교부 공지
 /broadcast [내용] - 13개 그룹 일괄 공지
+📎 사진/문서(PDF/Word/Excel) 캡션에 /broadcast 또는 /notice 입력 시 파일+텍스트 발송
 
 📅 관리자 전용 — 일정
 /schedule - 이번 주 봉사 일정
@@ -169,5 +170,58 @@ async def broadcast_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 fail_count += 1
         await update.message.reply_text(
             f"✅ {success_count}개 그룹 사진 공지 발송 완료!\n"
+            f"{'❌ ' + str(fail_count) + '개 실패' if fail_count else ''}"
+        )
+
+
+async def broadcast_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """문서 파일 (PDF/Word/Excel 등) + 캡션 /broadcast 또는 /notice 처리.
+    broadcast_photo 와 동일 패턴 — send_document 만 차이."""
+    if not update.message or not update.message.document:
+        return
+
+    ADMIN_IDS = config.get('admin_ids')
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+
+    caption = update.message.caption or ""
+
+    # /notice 처리
+    if '/notice' in caption:
+        caption = caption.replace('/notice', '').strip()
+        GROUP_ID = config.get('group_id')
+        TOPIC_ID = config.get('topic_id')
+        try:
+            await context.bot.send_document(
+                chat_id=GROUP_ID,
+                message_thread_id=TOPIC_ID,
+                document=update.message.document.file_id,
+                caption=f"📣 공지\n\n{caption}" if caption else "📣 공지"
+            )
+            await update.message.reply_text("✅ 파일 공지가 발송되었습니다.")
+        except Exception as e:
+            await update.message.reply_text(f"발송 실패: {e}")
+        return
+
+    # /broadcast 처리
+    if '/broadcast' in caption:
+        caption = caption.replace('/broadcast', '').strip()
+        BROADCAST_GROUPS = config.get('broadcast_groups', [])
+        success_count = 0
+        fail_count = 0
+        for group in BROADCAST_GROUPS:
+            try:
+                await context.bot.send_document(
+                    chat_id=group['id'],
+                    message_thread_id=group.get('topic_id'),
+                    document=update.message.document.file_id,
+                    caption=f"📣 공지\n\n{caption}" if caption else "📣 공지"
+                )
+                success_count += 1
+            except Exception as e:
+                print(f"❌ {group['name']} 파일 발송 실패: {e}")
+                fail_count += 1
+        await update.message.reply_text(
+            f"✅ {success_count}개 그룹 파일 공지 발송 완료!\n"
             f"{'❌ ' + str(fail_count) + '개 실패' if fail_count else ''}"
         )

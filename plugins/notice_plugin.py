@@ -1,5 +1,7 @@
 from telegram.ext import CommandHandler, MessageHandler, filters
-from handlers.notice_handler import start, notice, broadcast, broadcast_photo
+from handlers.notice_handler import (
+    start, notice, broadcast, broadcast_photo, broadcast_document,
+)
 from handlers.weekly_schedule_handler import schedule, weekly_report
 
 
@@ -12,4 +14,8 @@ def register(app, config):
     app.add_handler(MessageHandler(
         filters.PHOTO & filters.CAPTION,
         broadcast_photo
+    ))
+    app.add_handler(MessageHandler(
+        filters.Document.ALL & filters.CAPTION,
+        broadcast_document
     ))

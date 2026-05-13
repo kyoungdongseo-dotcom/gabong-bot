@@ -380,6 +380,72 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - **누락 시 영향**: /myreports 에서 0건 표시, 통계 왜곡
 - 호출 패턴 통일: `log_report_stage('service', 'received', 'ok', user_id=, chat_id=, topic_id=, message_id=, detail=)` + `parsed`
 
+### 🗂️ 그룹 관리 매트릭스 (2026-05-13 정리)
+
+**config.json 그룹 설정 8종:**
+
+| 설정 키 | 의미 | 개수 | 추가 시점 |
+|---|---|---|---|
+| `group_id` (단일) | 메인 그룹 ID | 1 | 봇 셋업 시 고정 |
+| `topic_id` (단일) | 메인 그룹 알림 토픽 | 1 | 봇 셋업 시 고정 |
+| `allowed_groups` | 봇 운영 허용 그룹 (마스터) | 27 | 새 지파/그룹 추가 시 |
+| `exclude_groups` | 멘션 알림 차단 그룹 | 13 | 자기 그룹 → 자기 알림 방지 |
+| `reaction_exclude_groups` | 이모지 반응 차단 그룹 | 1 | 메인 그룹만 일반적 |
+| `broadcast_groups` | /broadcast 발송 대상 | 13 | 13개 지파 그룹 |
+| `summary_groups` | 일일 요약 대상 | 1 | 보통 메인 그룹만 |
+| `partial_exclude_groups` | 특정 키워드만 차단 | 1 dict | 그룹별 세부 정책 |
+
+**기능별 차단/허용 매트릭스:**
+
+| 기능 | 적용 범위 | 사용 위치 |
+|---|---|---|
+| 봉사보고서 자동 처리 | `REPORT_GROUP_ID` 하드코딩 | `message_handler.py:13` (-1002777848839) |
+| 멘션 키워드 알림 | exclude_groups 제외 | `message_handler.py:586` |
+| 이모티콘 반응 | reaction_exclude_groups 제외 | `reaction_handler.py:15` |
+| AI 명령 (/ai, /summary) | allowed_groups 만 | `ai_handler.py:13-14` |
+| /notice | 메인 그룹 고정 | `notice_handler.py:75-76` |
+| /broadcast | broadcast_groups | `notice_handler.py:100` |
+| 리마인더 (개별) | 호출한 그룹 | `reminder_handler.py:22-23` |
+| 일일 요약 | summary_groups | `utils:send_daily_summary` |
+| /schedule, /myreports | 권한만 (그룹 무관) | 다양 |
+| 일반 텍스트 로그 | 차단 X | `log_message` |
+
+**새 그룹 추가 체크리스트:**
+- [ ] `allowed_groups` 에 추가 (봇 운영하려면 **필수**)
+- [ ] `exclude_groups` 에 추가? (멘션 자기참조 방지)
+- [ ] `reaction_exclude_groups` 에 추가? (이모지 차단 필요?)
+- [ ] `broadcast_groups` 에 추가? (공지 받을 그룹?)
+- [ ] `summary_groups` 에 추가? (일일 요약 대상?)
+- [ ] `partial_exclude_groups` 에 추가? (특정 키워드만 차단?)
+
+**정책 원칙:**
+1. `allowed_groups` 가 마스터 — 모든 다른 그룹은 여기 포함
+2. `exclude_groups` 는 부분 제거 — allowed 중에서 멘션만 차단
+3. `broadcast_groups` 는 별도 — allowed 무관 (현재 13개 모두 allowed 안에)
+4. `REPORT_GROUP_ID` 하드코딩 중 — 미래 config 이동 후보
+
+**일관성 검증 명령:**
+```bash
+python3 -c "
+import json
+d = json.load(open('config.json'))
+allowed = set(d.get('allowed_groups', []))
+exclude = set(d.get('exclude_groups', []))
+broadcast = set(g['id'] for g in d.get('broadcast_groups', []))
+print(f'멘션 받는 그룹: {len(allowed - exclude)}개')
+print(f'broadcast 중 allowed 없음: {broadcast - allowed}')
+"
+```
+
+### ⏰ 리마인더 자동 비활성화 (2026-05-13 추가)
+- `send_reminder` 발송 실패 시 패턴별 처리 (`utils/__init__.py`):
+  - `Forbidden` (봇 추방): **즉시 is_active=0** + admin DM
+  - `BadRequest` (토픽 삭제, chat not found): 즉시 비활성화
+  - 일반 `Exception` (네트워크): `REMINDER_FAIL_COUNT` 누적, **3회 시 비활성화**
+- `_deactivate_reminder()`: DB UPDATE → scheduler.remove_job → admin 알림 (best-effort)
+- 카운터는 메모리 (`REMINDER_FAIL_COUNT`) — 봇 재시작 시 리셋
+- **silent fail 시리즈 8번째 사례 해소**: 추방된 그룹의 리마인더 무한 누적 차단
+
 ### 📝 parse_report 매칭 정책 (2026-05-12 추가)
 - 키워드 매칭: 정규식 `r'(활동|봉사)\s*보고'`
   - "활동보고", "봉사보고" — 기존

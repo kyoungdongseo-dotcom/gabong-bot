@@ -213,9 +213,58 @@ def save_reminders(reminders):
     with open(REMINDERS_FILE, 'w') as f:
         json.dump(reminders, f, ensure_ascii=False)
 
-async def send_reminder(bot, chat_id, text, topic_id=None):
+# 리마인더 발송 실패 카운터 (메모리 — 봇 재시작 시 리셋)
+REMINDER_FAIL_COUNT = {}
+REMINDER_MAX_FAIL = 3
+
+
+async def _deactivate_reminder(bot, reminder_id, chat_id, reason, message):
+    """리마인더 자동 비활성화 + 관리자 DM 알림.
+    DB UPDATE → 스케줄러 remove → admin 알림 순서.
+    각 단계 실패해도 다음 단계 진행 (best-effort)."""
+    if not reminder_id:
+        return
+    try:
+        from database import get_conn
+        conn = get_conn()
+        conn.execute("UPDATE reminders SET is_active = 0 WHERE id = ?", (reminder_id,))
+        conn.commit()
+        conn.close()
+        print(f"🔴 리마인더 자동 비활성화: id={reminder_id} 사유={reason}")
+    except Exception as e:
+        print(f"⚠️ 리마인더 DB 비활성화 실패: id={reminder_id} err={e}")
+
+    try:
+        get_scheduler().remove_job(str(reminder_id))
+    except Exception:
+        pass
+
+    try:
+        admin_id = config.get('my_user_id', 97057565)
+        await bot.send_message(
+            chat_id=admin_id,
+            text=(
+                f"⚠️ 리마인더 자동 비활성화\n"
+                f"ID: {reminder_id}\n"
+                f"그룹: {chat_id}\n"
+                f"사유: {reason}\n"
+                f"메시지: {(message or '')[:50]}"
+            )
+        )
+    except Exception as e:
+        print(f"⚠️ 리마인더 비활성화 admin 알림 실패: {e}")
+
+
+async def send_reminder(bot, chat_id, text, topic_id=None, reminder_id=None):
     """리마인더 발송. 등록한 chat_id/topic_id 로 전송.
-    chat_id=None 또는 0 이면 config 기본 그룹/토픽으로 폴백 (구버전 호환)."""
+    chat_id=None 또는 0 이면 config 기본 그룹/토픽으로 폴백 (구버전 호환).
+    reminder_id 전달 시 발송 실패 패턴별 자동 비활성화 (2026-05-13 추가):
+      - Forbidden (봇 추방): 즉시 비활성화 + admin DM
+      - BadRequest (토픽 삭제 등): 즉시 비활성화
+      - 일반 Exception (네트워크): 누적 3회 시 비활성화
+    """
+    from telegram.error import Forbidden, BadRequest
+
     if not chat_id:
         chat_id = config.get('group_id')
         topic_id = config.get('topic_id')
@@ -226,8 +275,28 @@ async def send_reminder(bot, chat_id, text, topic_id=None):
             text=f"⏰ 리마인더\n\n{text}"
         )
         print(f"📩 리마인더 발송: chat={chat_id} topic={topic_id}")
+        if reminder_id in REMINDER_FAIL_COUNT:
+            del REMINDER_FAIL_COUNT[reminder_id]
+    except Forbidden as e:
+        print(f"🚫 리마인더 봇 추방: chat={chat_id} id={reminder_id} err={e}")
+        await _deactivate_reminder(bot, reminder_id, chat_id, "봇 추방 (Forbidden)", text)
+    except BadRequest as e:
+        msg = str(e).lower()
+        if 'message thread' in msg or 'topic' in msg or 'chat not found' in msg:
+            print(f"🚫 리마인더 토픽/채팅 미존재: chat={chat_id} id={reminder_id} err={e}")
+            await _deactivate_reminder(bot, reminder_id, chat_id, f"BadRequest: {e}", text)
+        else:
+            print(f"❌ 리마인더 BadRequest: chat={chat_id} id={reminder_id} err={e}")
     except Exception as e:
-        print(f"❌ 리마인더 발송 실패: chat={chat_id} topic={topic_id} err={e}")
+        print(f"❌ 리마인더 발송 실패: chat={chat_id} topic={topic_id} id={reminder_id} err={e}")
+        if reminder_id:
+            REMINDER_FAIL_COUNT[reminder_id] = REMINDER_FAIL_COUNT.get(reminder_id, 0) + 1
+            if REMINDER_FAIL_COUNT[reminder_id] >= REMINDER_MAX_FAIL:
+                await _deactivate_reminder(
+                    bot, reminder_id, chat_id,
+                    f"연속 {REMINDER_MAX_FAIL}회 발송 실패", text
+                )
+                del REMINDER_FAIL_COUNT[reminder_id]
 
 async def send_broadcast_reminder(bot, text):
     BROADCAST_GROUPS = config.get('broadcast_groups')

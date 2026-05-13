@@ -51,7 +51,7 @@ def _add_job(scheduler, r: dict, bot):
             scheduler.add_job(
                 send_reminder, 'cron',
                 hour=hour, minute=minute,
-                args=[bot, group_id, message, topic_id],
+                args=[bot, group_id, message, topic_id, r["id"]],
                 id=rid, replace_existing=True
             )
 
@@ -65,7 +65,7 @@ def _add_job(scheduler, r: dict, bot):
             kw = dict(
                 day_of_week=days_en,
                 hour=hour, minute=minute,
-                args=[bot, group_id, message, topic_id],
+                args=[bot, group_id, message, topic_id, r["id"]],
                 id=rid, replace_existing=True
             )
             if r_type == "biweekly":
@@ -77,7 +77,7 @@ def _add_job(scheduler, r: dict, bot):
                 send_reminder, 'cron',
                 day=r.get("day_of_month", 1),
                 hour=hour, minute=minute,
-                args=[bot, group_id, message, topic_id],
+                args=[bot, group_id, message, topic_id, r["id"]],
                 id=rid, replace_existing=True
             )
 

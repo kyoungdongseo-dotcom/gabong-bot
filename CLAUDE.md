@@ -380,6 +380,58 @@ sqlite3 ~/gabong-bot/data/gabong.db "SELECT * FROM report_log ORDER BY id DESC L
 - **누락 시 영향**: /myreports 에서 0건 표시, 통계 왜곡
 - 호출 패턴 통일: `log_report_stage('service', 'received', 'ok', user_id=, chat_id=, topic_id=, message_id=, detail=)` + `parsed`
 
+### 🔐 권한별 기능 매트릭스 (2026-05-13 정리)
+
+**권한 4단계:**
+
+| 레벨 | 권한 | 인원 | 정의 위치 |
+|---|---|---|---|
+| Lv 0 | 외부 사용자 | — | 봇과 1:1 DM 가능 |
+| Lv 1 | 허용 그룹 멤버 | — | allowed_groups 27개 |
+| Lv 2 | 관리자 | 6명 | config.admin_ids |
+| Lv 3 | 메인 관리자 | 1명 (97057565) | config.my_user_id |
+
+**일반 사용자 명령어 (5개, 본인 데이터만):**
+- `/start` — 봇 안내
+- `/help` — 보고서 양식 안내 (인라인 버튼)
+- `/myreports` — 본인 보고서 이력 30일
+- `/reminder_stats` — 본인 리마인더 통계
+- `/reminder_analysis` — 본인 리마인더 분석
+
+**관리자 명령어 (33개) — 점검(8) / 공지(5) / AI(8) / 리마인더(10) / 그룹관리(2)**
+
+**메인 관리자 전용 (3개)**: `/reply`, `/admin`, 이모지 반응 forward
+
+**자동 기능 (그룹 내, 권한 체크 없이):**
+- 봉사보고서 자동 처리 (REPORT_GROUP_ID 토픽 필터)
+- MOU/수상 자동 처리 (토픽 3225/3553)
+- 멘션 키워드 알림 (exclude_groups 제외 + rate limit 1h 3회)
+- 리마인더 키워드 트리거
+- 메시지 로깅 (AI 컨텍스트)
+
+**그룹별 차단/허용:**
+
+| 그룹 분류 | 멘션 | 반응 | AI | 보고서 | 리마인더 | broadcast |
+|---|---|---|---|---|---|---|
+| 메인 그룹 | ❌ | ❌ | ✅ | ❌ | ✅ | (수신) |
+| REPORT 그룹 | ❌ | ✅(main만) | ✅ | ✅ | ✅ | ❌ |
+| 13개 지파 | (개별) | ✅ | ✅ | ❌ | ✅ | ✅ 수신 |
+| 부분 차단 (-1003689540938) | 일부 키워드 | ✅ | ✅ | ❌ | ✅ | ❌ |
+| allowed 외 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+**권한 체크 헬퍼 (utils/permissions.py, 2026-05-13 강화):**
+
+```python
+is_admin(user_id)              # bool 동기
+is_main_admin(user_id)         # bool 동기
+await check_admin(update, ctx)         # silent True/False
+await require_admin(update, ctx)       # 거부 메시지 + False
+await require_main_admin(update, ctx)  # 거부 메시지 + False
+```
+
+→ **새 핸들러 작성 시**: `require_admin` (거부 메시지 보냄) 또는 `check_admin` (silent) 사용 권장.
+→ **기존 4가지 패턴 (인라인 16곳 + ADMIN_IDS 상수 7곳 + check_admin 7곳 + my_user_id 다수) 점진 마이그레이션 후보**.
+
 ### 🗂️ 그룹 관리 매트릭스 (2026-05-13 정리)
 
 **config.json 그룹 설정 8종:**

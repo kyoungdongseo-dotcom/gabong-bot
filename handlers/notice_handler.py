@@ -7,9 +7,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     msg = """안녕하세요! GAbong Bot입니다 🤖
 
-📋 도움말
-/help - 보고서 형식 안내 (인라인 버튼)
-/myreports - 내 보고서 제출 이력 (30일)
+━━━━━━━━━━━━━━━━━
+📋 누구나 사용 가능
+━━━━━━━━━━━━━━━━━
+/help - 보고서 양식 안내 (인라인 버튼)
+/myreports - 내 보고서 이력 (30일)
+/reminder_stats - 내 리마인더 통계
+/reminder_analysis - 내 리마인더 분석
+
+📝 봉사보고서 자동 처리
+- 봉사공유창 토픽에 양식 입력 시 자동 시트/Word 저장
 
 ━━━━━━━━━━━━━━━━━
 
@@ -23,6 +30,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📢 관리자 전용 — 공지
 /notice [내용] - 총회봉교부 공지
 /broadcast [내용] - 13개 그룹 일괄 공지
+/add_group [id] - 봇 허용 그룹 추가
 📎 사진/문서(PDF/Word/Excel) 캡션에 /broadcast 또는 /notice 입력 시 파일+텍스트 발송
 
 📅 관리자 전용 — 일정

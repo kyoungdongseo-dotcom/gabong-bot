@@ -93,8 +93,20 @@ def diagnose_environment():
 
 
 def get_bot_token():
-    """다중 소스 fallback 으로 토큰 탐지."""
-    # 1) .env 변수 (다양한 이름)
+    """가봉봇 토큰 탐지 — config.json 우선 (운영 봇 main.py 와 일치).
+    Why: .env 에 다른 봇 (세계경제봇 등) 토큰이 들어있을 수 있어 우선순위 역전 필요.
+    main.py:179 는 config.get('telegram_token') 사용 → 검증 스크립트도 동일 출처."""
+    # 1) config.json (가봉봇, 운영 봇)
+    try:
+        with open('config.json') as f:
+            cfg = json.load(f)
+        for k in ['telegram_token', 'bot_token', 'token']:
+            if cfg.get(k):
+                return cfg[k], f'config.json:{k}'
+    except Exception:
+        pass
+
+    # 2) .env fallback (단, 다른 봇 토큰일 수 있으니 주의)
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -105,16 +117,6 @@ def get_bot_token():
         t = os.getenv(var)
         if t:
             return t, f'.env:{var}'
-
-    # 2) config.json
-    try:
-        with open('config.json') as f:
-            cfg = json.load(f)
-        for k in ['telegram_token', 'bot_token', 'token']:
-            if cfg.get(k):
-                return cfg[k], f'config.json:{k}'
-    except Exception:
-        pass
 
     return None, None
 

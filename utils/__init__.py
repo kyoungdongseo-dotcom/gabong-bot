@@ -311,11 +311,15 @@ async def send_broadcast_reminder(bot, text):
             print(f"브로드캐스트 리마인더 오류 {group['name']}: {e}")
 
 async def send_daily_missing_summary(bot):
-    """매일 20:05 서무에게 보고서 미완성 (필수 필드 누락) 현황 DM (2026-05-14).
+    """매일 20:05 서버에게 보고서 미완성 (필수 필드 누락) 현황 DM (2026-05-14).
     stage='missing' 기록을 KST 당일로 필터링, 보고서 타입별 그룹화.
-    0건이면 발송 안 함 (silent OK — 정상 운영 신호)."""
+    0건이면 발송 안 함 (silent OK — 정상 운영 신호).
+    timezone 안전: created_at 의 처음 10자(YYYY-MM-DD)를 KST 당일과 직접 비교 (2026-05-15)."""
     import sqlite3
+    from datetime import timezone as _tz, timedelta as _td
     SECRETARY_ID = 754270008
+    KST = _tz(_td(hours=9))
+    today_kst = datetime.now(KST).strftime('%Y-%m-%d')
     try:
         conn = sqlite3.connect('data/gabong.db')
         cur = conn.cursor()
@@ -324,9 +328,9 @@ async def send_daily_missing_summary(bot):
                    strftime('%H:%M', created_at) as t
             FROM report_log
             WHERE stage = 'missing'
-              AND date(created_at) = date('now', 'localtime')
+              AND substr(created_at, 1, 10) = ?
             ORDER BY report_type, created_at
-        """)
+        """, (today_kst,))
         rows = cur.fetchall()
         conn.close()
 
@@ -378,19 +382,23 @@ async def send_daily_missing_summary(bot):
 
 def cleanup_old_missing():
     """30일 이상 된 stage='missing' 기록 정리 (매일 03:10).
-    report_log 의 'missing' stage 만 별도 정리 — 다른 stage 는 cleanup_report_log (90일) 그대로."""
+    report_log 의 'missing' stage 만 별도 정리 — 다른 stage 는 cleanup_report_log (90일) 그대로.
+    timezone 안전: KST 기준 30일 cutoff 를 직접 계산 (2026-05-15)."""
     import sqlite3
+    from datetime import timezone as _tz, timedelta as _td
+    KST = _tz(_td(hours=9))
+    cutoff = (datetime.now(KST) - _td(days=30)).strftime('%Y-%m-%d')
     try:
         conn = sqlite3.connect('data/gabong.db')
         cur = conn.cursor()
         cur.execute(
             "DELETE FROM report_log WHERE stage='missing' "
-            "AND date(created_at) < date('now', '-30 days')"
+            "AND substr(created_at, 1, 10) < ?", (cutoff,)
         )
         deleted = cur.rowcount
         conn.commit()
         conn.close()
-        print(f"🗑️ 30일 지난 missing 기록 삭제: {deleted}건")
+        print(f"🗑️ 30일 지난 missing 기록 삭제: {deleted}건 (cutoff={cutoff})")
     except Exception as e:
         print(f"❌ missing 삭제 실패: {e}")
 
@@ -508,7 +516,9 @@ def save_last_mention(data: dict):
         print(f"[LAST_MENTION] 저장 오류: {e}")
 
 LAST_MENTION = _load_last_mention()
-scheduler = AsyncIOScheduler()
+# 명시적 KST timezone — 서버 OS 가 UTC 여도 모든 cron 이 KST 기준 작동 (2026-05-14)
+# 미설정 시 시스템 TZ 따라감 → 서버 UTC 면 cron hour=20 이 KST 05시 발동 위험
+scheduler = AsyncIOScheduler(timezone='Asia/Seoul')
 
 def get_config():
     """config.json 파일에서 설정을 로드"""

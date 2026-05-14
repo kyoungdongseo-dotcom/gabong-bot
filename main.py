@@ -11,7 +11,8 @@ from pathlib import Path
 from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, AIORateLimiter
 import config
-from utils import init_database, scheduler, send_daily_summary, check_changes
+from utils import (init_database, scheduler, send_daily_summary,
+                   send_daily_missing_summary, cleanup_old_missing, check_changes)
 from handlers.weekly_report_analyzer import send_weekly_report
 from handlers.monthly_stats_handler import send_monthly_stats
 from handlers.backup_handler import run_backup, run_daily_cleanup, run_weekly_cleanup
@@ -155,6 +156,11 @@ async def post_init(app):
                 print(f"플러그인 post_init 오류: {plugin.__name__} -> {e}")
 
     scheduler.add_job(send_daily_summary, 'cron', hour=20, minute=0, args=[app.bot], id="daily_summary")
+    # 매일 20:05 서무에게 보고서 미완성 현황 DM (2026-05-14 추가)
+    scheduler.add_job(send_daily_missing_summary, 'cron', hour=20, minute=5,
+                      args=[app.bot], id="daily_missing_summary")
+    # 매일 03:10 stage='missing' 30일 정리
+    scheduler.add_job(cleanup_old_missing, 'cron', hour=3, minute=10, id="cleanup_old_missing")
     scheduler.add_job(send_weekly_report, 'cron', day_of_week='mon', hour=8, minute=0, args=[app.bot], id="weekly_report_analyzer")
     scheduler.add_job(send_monthly_stats, 'cron', day=1, hour=0, minute=0, args=[app.bot], id="monthly_stats")
     scheduler.add_job(run_backup, 'cron', hour=3, minute=0, args=[app.bot], id="daily_backup")

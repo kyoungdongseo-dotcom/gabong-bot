@@ -50,10 +50,15 @@ def _alias_hint(field: str) -> str:
 async def _check_required_fields(report: dict, user_id: int, context) -> bool:
     """필수 필드 검증. missing 있으면 사용자 DM 안내 후 True 반환 (저장 중단).
     missing 없으면 False (저장 진행).
-    Why: mou/award 패턴 일관성. 양식 미완성 보고서 silent 저장 방지."""
+    Why: mou/award 패턴 일관성. 양식 미완성 보고서 silent 저장 방지.
+    stage='missing' 기록으로 일일 서무 요약 추적 가능 (2026-05-14)."""
     missing = [f for f in REQUIRED_FIELDS if not report.get(f)]
     if not missing:
         return False
+    from database import log_report_stage
+    log_report_stage('service', 'missing', 'fail',
+                     user_id=user_id,
+                     detail=f"missing: {','.join(missing)}")
     hints = '\n  - '.join(_alias_hint(f) for f in missing)
     try:
         await context.bot.send_message(

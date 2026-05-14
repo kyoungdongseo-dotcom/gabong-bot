@@ -691,6 +691,8 @@ async def _process_award_album(context, media_group_id: str):
         if '_missing' in data:
             log_report_stage('award', 'parsed', 'fail', user_id=user_id,
                              detail=f"missing: {','.join(data['_missing'])}")
+            log_report_stage('award', 'missing', 'fail', user_id=user_id,
+                             detail=f"missing: {','.join(data['_missing'])}")
             hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
             await reply_to_origin(
                 context.bot, origin,
@@ -793,6 +795,8 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if '_missing' in data:
             log_report_stage('award', 'parsed', 'fail', user_id=user_id,
                              detail=f"missing: {','.join(data['_missing'])}")
+            log_report_stage('award', 'missing', 'fail', user_id=user_id,
+                             detail=f"missing: {','.join(data['_missing'])}")
             hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])
             await reply_to_origin(
                 context.bot, origin,
@@ -870,6 +874,9 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if '_missing' in data:
         log_report_stage('award', 'parsed', 'fail',
+                         user_id=user_id,
+                         detail=f"missing: {','.join(data['_missing'])}")
+        log_report_stage('award', 'missing', 'fail',
                          user_id=user_id,
                          detail=f"missing: {','.join(data['_missing'])}")
         hints = '\n  - '.join(_alias_hint(f) for f in data['_missing'])

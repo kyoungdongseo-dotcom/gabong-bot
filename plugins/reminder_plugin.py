@@ -134,7 +134,12 @@ def post_init(app):
 
     # 기존 시스템 job(daily_summary 등)은 건드리지 않고 리마인더만 제거 후 재등록
     existing_ids = {job.id for job in scheduler.get_jobs()}
-    system_ids = {"daily_summary", "weekly_report_analyzer", "monthly_stats", "weekly_report_auto", "daily_backup"}
+    system_ids = {
+        "daily_summary", "daily_missing_summary",
+        "weekly_report_analyzer", "monthly_stats", "weekly_report_auto",
+        "daily_backup", "daily_cleanup", "weekly_cleanup",
+        "cleanup_old_missing",
+    }
 
     for job_id in existing_ids - system_ids:
         try:

@@ -310,6 +310,91 @@ async def send_broadcast_reminder(bot, text):
         except Exception as e:
             print(f"브로드캐스트 리마인더 오류 {group['name']}: {e}")
 
+async def send_daily_missing_summary(bot):
+    """매일 20:05 서무에게 보고서 미완성 (필수 필드 누락) 현황 DM (2026-05-14).
+    stage='missing' 기록을 KST 당일로 필터링, 보고서 타입별 그룹화.
+    0건이면 발송 안 함 (silent OK — 정상 운영 신호)."""
+    import sqlite3
+    SECRETARY_ID = 754270008
+    try:
+        conn = sqlite3.connect('data/gabong.db')
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT report_type, user_id, detail,
+                   strftime('%H:%M', created_at) as t
+            FROM report_log
+            WHERE stage = 'missing'
+              AND date(created_at) = date('now', 'localtime')
+            ORDER BY report_type, created_at
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        if not rows:
+            print("📊 일일 미완성 요약: 0건 (발송 안 함)")
+            return
+
+        def get_user_name(uid):
+            try:
+                c2 = sqlite3.connect('data/gabong.db')
+                cur2 = c2.cursor()
+                cur2.execute(
+                    "SELECT user_name FROM messages WHERE user_id=? "
+                    "AND user_name IS NOT NULL "
+                    "ORDER BY timestamp DESC LIMIT 1", (uid,)
+                )
+                r = cur2.fetchone()
+                c2.close()
+                return r[0] if r and r[0] else f"ID:{uid}"
+            except Exception:
+                return f"ID:{uid}"
+
+        grouped = {'service': [], 'mou': [], 'award': []}
+        for report_type, user_id, detail, t in rows:
+            if report_type in grouped:
+                grouped[report_type].append((user_id, detail, t))
+
+        today = datetime.now().strftime('%Y-%m-%d')
+        msg = f"📊 보고서 미완성 현황 ({today})\n\n"
+        labels = {'service': '봉사', 'mou': 'MOU', 'award': '수상'}
+        total = 0
+        for key in ['service', 'mou', 'award']:
+            items = grouped[key]
+            msg += f"[{labels[key]}] {len(items)}건\n"
+            for uid, detail, t in items:
+                name = get_user_name(uid)
+                miss = (detail or '').replace('missing: ', '') or '?'
+                msg += f"- {name}: {miss} ({t})\n"
+            msg += "\n"
+            total += len(items)
+
+        msg += f"총 {total}건 미완성"
+
+        await bot.send_message(chat_id=SECRETARY_ID, text=msg)
+        print(f"📊 일일 미완성 요약 발송: {total}건 → {SECRETARY_ID}")
+    except Exception as e:
+        print(f"❌ 일일 미완성 요약 실패: {e}")
+
+
+def cleanup_old_missing():
+    """30일 이상 된 stage='missing' 기록 정리 (매일 03:10).
+    report_log 의 'missing' stage 만 별도 정리 — 다른 stage 는 cleanup_report_log (90일) 그대로."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect('data/gabong.db')
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM report_log WHERE stage='missing' "
+            "AND date(created_at) < date('now', '-30 days')"
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        print(f"🗑️ 30일 지난 missing 기록 삭제: {deleted}건")
+    except Exception as e:
+        print(f"❌ missing 삭제 실패: {e}")
+
+
 async def send_daily_summary(bot):
     SUMMARY_GROUPS = config.get('summary_groups')
     MY_USER_ID = config.get('my_user_id')

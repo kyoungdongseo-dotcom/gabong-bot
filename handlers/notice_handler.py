@@ -87,7 +87,9 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
         await update.message.reply_text("사용법: /notice [내용]")
         return
-    text = " ".join(context.args)
+    # 원본 텍스트 보존 (줄바꿈/이중공백 유지) — 2026-05-15
+    # context.args 는 split() 후 join 으로 줄바꿈 손실 → split(maxsplit=1) 로 명령어만 제거
+    text = update.message.text.split(maxsplit=1)[1]
     try:
         await context.bot.send_message(
             chat_id=GROUP_ID,
@@ -111,7 +113,9 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
         await update.message.reply_text("사용법: /broadcast [내용]")
         return
-    text = " ".join(context.args)
+    # 원본 텍스트 보존 (줄바꿈/이중공백 유지) — 2026-05-15
+    # context.args 는 split() 후 join 으로 줄바꿈 손실 → split(maxsplit=1) 로 명령어만 제거
+    text = update.message.text.split(maxsplit=1)[1]
     success_count = 0
     fail_count = 0
     for group in BROADCAST_GROUPS:

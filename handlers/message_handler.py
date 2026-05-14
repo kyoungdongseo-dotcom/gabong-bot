@@ -26,8 +26,43 @@ MAX_PHOTOS = 10
 # 3초였을 때 caption=NO 오판정 빈발 → 7초로 안전 마진 확보 (2026-05-12 변경)
 ALBUM_WAIT_SECONDS = 7
 
-# award(3553)/mou(3225) 토픽 — 해당 핸들러가 직접 처리
-EXCLUDED_TOPICS = {3553, 3225}
+# 봉사보고서 화이트리스트 — 봉사공유창 토픽 (General) 만 처리 (2026-05-14)
+# mou/award 토픽은 각자 전용 핸들러가 자기 토픽 화이트리스트로 처리
+VOLUNTEER_TOPIC_ID = 2
+
+# 봉사보고서 필수 필드 (mou/award 패턴 적용)
+# 양식 키는 report_parser.py 의 _REPORT_KEY_ALIASES 와 일치
+REQUIRED_FIELDS = {'지파명', '교회명', '활동일시'}
+
+_VOLUNTEER_FIELD_ALIASES = {
+    '지파명': ['지파명', '지파', '지파이름'],
+    '교회명': ['교회명', '교회'],
+    '활동일시': ['활동일시', '봉사일시', '일시', '일자', '날짜'],
+}
+
+
+def _alias_hint(field: str) -> str:
+    """필수 필드 누락 시 사용자에게 보내는 안내 힌트."""
+    aliases = _VOLUNTEER_FIELD_ALIASES.get(field, [field])
+    return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
+
+
+async def _check_required_fields(report: dict, user_id: int, context) -> bool:
+    """필수 필드 검증. missing 있으면 사용자 DM 안내 후 True 반환 (저장 중단).
+    missing 없으면 False (저장 진행).
+    Why: mou/award 패턴 일관성. 양식 미완성 보고서 silent 저장 방지."""
+    missing = [f for f in REQUIRED_FIELDS if not report.get(f)]
+    if not missing:
+        return False
+    hints = '\n  - '.join(_alias_hint(f) for f in missing)
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"⚠️ 봉사보고서 필수 항목 누락:\n  - {hints}\n\n사진+양식 모두 필요합니다."
+        )
+    except Exception as e:
+        print(f"⚠️ 필수 필드 누락 DM 안내 실패: user={user_id} err={e}")
+    return True
 
 # my_keywords 빈도 제한 (메인 관리자 DM 도배 방지)
 MY_KEYWORD_TRIGGER_HISTORY = {}   # {user_id: [timestamp, ...]}
@@ -368,6 +403,12 @@ async def process_media_group(context, media_group_id: str):
                              detail=caption[:120])
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                              detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+            # 필수 필드 검증 (2026-05-14 추가, mou/award 패턴)
+            if await _check_required_fields(report, user_id, context):
+                log_report_stage('service', 'parsed', 'fail',
+                                 user_id=user_id, detail='missing required fields')
+                cleanup_media_cache()
+                return
             report['_origin'] = origin
             await reply_to_origin(
                 context.bot, origin,
@@ -406,8 +447,9 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
     if chat_id != REPORT_GROUP_ID:
         return
     thread_id = update.message.message_thread_id
-    # award/mou 토픽은 각 전용 핸들러가 처리
-    if thread_id in EXCLUDED_TOPICS:
+    # 봉사공유창 토픽만 처리 (화이트리스트, 2026-05-14)
+    # mou(3225)/award(3553) 토픽은 각 전용 핸들러가 자기 화이트리스트로 처리
+    if thread_id != VOLUNTEER_TOPIC_ID:
         return
 
     from handlers.report_base import make_origin, reply_to_origin
@@ -463,6 +505,10 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                                  detail=caption[:120])
                 log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                                  detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+                if await _check_required_fields(report, user_id, context):
+                    log_report_stage('service', 'parsed', 'fail',
+                                     user_id=user_id, detail='missing required fields')
+                    return
                 report['_origin'] = origin
                 await reply_to_origin(context.bot, origin, "✅ 봉사보고서 접수 - 처리 중")
                 await finalize_report(context, report, [photo_url],
@@ -508,7 +554,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(GROUP_MESSAGES[chat_id]) > 100:
         GROUP_MESSAGES[chat_id] = GROUP_MESSAGES[chat_id][-100:]
 
-    if chat_id == REPORT_GROUP_ID and thread_id not in EXCLUDED_TOPICS:
+    if chat_id == REPORT_GROUP_ID and thread_id == VOLUNTEER_TOPIC_ID:
         report = parse_report(text)
         # 부분 키워드 일치인데 parse 실패 시 형식 안내 (1일 1회)
         if not report:
@@ -530,6 +576,10 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                              detail=text[:120])
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                              detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+            if await _check_required_fields(report, user_id, context):
+                log_report_stage('service', 'parsed', 'fail',
+                                 user_id=user_id, detail='missing required fields')
+                return
 
             # 케이스 F/G: 먼저 도착한 사진 연결
             pre_photos: list = []

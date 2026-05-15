@@ -421,11 +421,27 @@ async def send_daily_summary(bot):
 
             if user_msgs:
                 history = "\n".join(f"{r['user_name']}: {r['text']}" for r in user_msgs)
-                question = f"다음은 오늘 '{group_name}' 그룹의 대화 내용입니다. 핵심 내용을 한국어로 요약해주세요:\n{history}"
+                msg_count = len(user_msgs)
+                question = (
+                    f"다음은 오늘 '{group_name}' 그룹의 대화 내용입니다. 한국어로 요약해주세요.\n\n"
+                    f"[출력 형식 — 마크다운(*, _, `, **) 절대 사용 금지]\n"
+                    f"📝 오늘의 요약 ({msg_count}건)\n\n"
+                    f"📅 주제\n"
+                    f"  (한 줄 요약)\n\n"
+                    f"💬 진행 상황\n"
+                    f"  • 항목 1\n"
+                    f"  • 항목 2\n\n"
+                    f"✅ 액션 아이템   (액션이 없으면 이 섹션 통째로 출력하지 말 것)\n"
+                    f"  • 항목 1\n\n"
+                    f"[규칙]\n"
+                    f"- 일반 텍스트만, 들여쓰기 2칸 + 불릿 •\n"
+                    f"- 액션 아이템이 없으면 ✅ 섹션 자체 생략\n\n"
+                    f"[대화 내용 — 총 {msg_count}건]\n{history}"
+                )
                 summary = ask_claude(question)
                 await bot.send_message(
                     chat_id=MY_USER_ID,
-                    text=f"📋 일일 요약 - {group_name}\n\n{summary}"
+                    text=f"📋 {group_name}\n\n{summary}"
                 )
                 GROUP_MESSAGES.pop(group_id, None)
             else:

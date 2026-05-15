@@ -48,12 +48,28 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for msg in history:
         role = "나" if msg["role"] == "user" else "AI"
         history_text += f"{role}: {msg['content']}\n"
-    question = f"다음 대화를 한국어로 요약해주세요:\n{history_text}"
+    msg_count = len(history)
+    question = (
+        f"다음 대화를 한국어로 요약해주세요.\n\n"
+        f"[출력 형식 — 마크다운(*, _, `, **) 절대 사용 금지]\n"
+        f"📝 오늘의 요약 ({msg_count}건)\n\n"
+        f"📅 주제\n"
+        f"  (한 줄 요약)\n\n"
+        f"💬 진행 상황\n"
+        f"  • 항목 1\n"
+        f"  • 항목 2\n\n"
+        f"✅ 액션 아이템   (액션이 없으면 이 섹션 통째로 출력하지 말 것)\n"
+        f"  • 항목 1\n\n"
+        f"[규칙]\n"
+        f"- 일반 텍스트만, 들여쓰기 2칸 + 불릿 •\n"
+        f"- 액션 아이템이 없으면 ✅ 섹션 자체 생략\n\n"
+        f"[대화 내용 — 총 {msg_count}건]\n{history_text}"
+    )
     await update.message.reply_text("🤖 요약 중입니다...")
     mode = get_chat_mode(chat_id)
     loop = asyncio.get_running_loop()
     answer = await loop.run_in_executor(None, ask_claude, question, chat_id, update.effective_user.id, update.effective_user.first_name, update.message.message_thread_id, mode)
-    await update.message.reply_text(f"📝 대화 요약\n\n{answer}")
+    await update.message.reply_text(answer)
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:

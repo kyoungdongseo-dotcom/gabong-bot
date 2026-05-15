@@ -90,11 +90,14 @@ def _startup_checks():
             print(f"⚠️ [진단] {fname} 없음 → Google Sheets 연동 불가")
             ok = False
 
-    required_keys = ["telegram_token", "group_id", "admin_ids", "spreadsheet_id"]
+    required_keys = ["group_id", "admin_ids", "spreadsheet_id"]
     for key in required_keys:
         if not config.get(key):
             print(f"⚠️ [진단] config.json 필수 키 누락: {key}")
             ok = False
+    if not config.get_telegram_token():
+        print("⚠️ [진단] TELEGRAM_TOKEN (.env) 또는 telegram_token (config.json) 미설정")
+        ok = False
 
     try:
         import sqlite3 as _sqlite3
@@ -176,7 +179,7 @@ loaded_plugins = load_plugins(enabled_plugins)
 
 app = (
     ApplicationBuilder()
-    .token(config.get("telegram_token"))
+    .token(config.get_telegram_token())
     .rate_limiter(AIORateLimiter(max_retries=3))   # 텔레그램 한도 자동 관리 + 429 자동 retry
     .post_init(post_init)
     .build()

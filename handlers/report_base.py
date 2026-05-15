@@ -98,7 +98,7 @@ def with_sheet_retry(save_fn, data, retries: int = 3) -> bool:
 
 def download_photo(url: str, retries: int = 3, delay: int = 5) -> str | None:
     """사진 다운로드 (최대 retries회, 실패 시 delay초 대기 후 재시도)"""
-    token = config.get('telegram_token')
+    token = config.get_telegram_token()
     full_url = url if url.startswith('http') else f"https://api.telegram.org/file/bot{token}/{url}"
     last_err = None
     for attempt in range(retries):

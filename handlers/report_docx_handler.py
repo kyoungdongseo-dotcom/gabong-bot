@@ -46,7 +46,7 @@ def add_section(doc, title, content):
 
 def download_photo(url: str) -> str | None:
     try:
-        token = config.get('telegram_token')
+        token = config.get_telegram_token()
         if not url.startswith('http'):
             full_url = f"https://api.telegram.org/file/bot{token}/{url}"
         else:

@@ -162,7 +162,7 @@ def save_to_sheet(data: dict) -> bool:
 
 def download_photo(url: str) -> str | None:
     try:
-        token = config.get('telegram_token')
+        token = config.get_telegram_token()
         full_url = url if url.startswith('http') else f"https://api.telegram.org/file/bot{token}/{url}"
         resp = requests.get(full_url, timeout=10)
         if resp.status_code == 200:

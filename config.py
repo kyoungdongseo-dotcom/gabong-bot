@@ -38,13 +38,24 @@ def set_value(key, value):
 
 def validate_config():
     """필수 설정 키 검증."""
-    required_keys = ['telegram_token', 'group_id', 'admin_ids']
+    required_keys = ['group_id', 'admin_ids']  # telegram_token 은 .env 로 이동
     config = load_config()
     missing = [key for key in required_keys if key not in config]
     if missing:
         print(f"필수 설정 키가 누락되었습니다: {missing}")
         return False
+    if not get_telegram_token():
+        print("필수: TELEGRAM_TOKEN (.env) 또는 telegram_token (config.json) 미설정")
+        return False
     return True
+
+
+def get_telegram_token():
+    """텔레그램 봇 토큰 조회 — .env 우선, config.json 폴백.
+
+    마이그레이션 기간 동안 backward compatibility 유지.
+    """
+    return os.environ.get('TELEGRAM_TOKEN') or get('telegram_token')
 
 # 전역 설정 캐시 (성능 최적화)
 _config_cache = None

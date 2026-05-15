@@ -15,7 +15,7 @@ import config
 from database import get_conn
 
 KST = pytz.timezone('Asia/Seoul')
-ADMIN_USER_ID = 97057565
+ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 # 13개 지파 — 미제출 감지 기준
 EXPECTED_JIPA = {

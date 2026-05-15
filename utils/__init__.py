@@ -317,7 +317,7 @@ async def send_daily_missing_summary(bot):
     timezone 안전: created_at 의 처음 10자(YYYY-MM-DD)를 KST 당일과 직접 비교 (2026-05-15)."""
     import sqlite3
     from datetime import timezone as _tz, timedelta as _td
-    SECRETARY_ID = 754270008
+    SECRETARY_ID = config.get('secretary_id', 754270008)
     KST = _tz(_td(hours=9))
     today_kst = datetime.now(KST).strftime('%Y-%m-%d')
     try:

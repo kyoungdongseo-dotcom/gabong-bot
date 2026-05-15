@@ -1,9 +1,12 @@
+import logging
 import traceback
 from datetime import datetime, timedelta
 import pytz
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import config
+
+logger = logging.getLogger(__name__)
 
 KST = pytz.timezone('Asia/Seoul')
 
@@ -52,9 +55,11 @@ def analyze_weekly_report() -> str:
                         if week_start <= date <= week_end:
                             weekly_rows.append(row)
                         break
-                    except:
+                    except Exception as e:
+                        logger.debug(f"analyze_weekly_report 날짜 파싱 무시된 예외: {e}")
                         continue
-            except:
+            except Exception as e:
+                logger.debug(f"analyze_weekly_report 행 처리 무시된 예외: {e}")
                 continue
 
         if not weekly_rows:

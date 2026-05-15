@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from telegram import Update
@@ -5,6 +6,8 @@ from telegram.ext import ContextTypes
 
 import config
 from utils import load_reminders, save_reminders
+
+logger = logging.getLogger(__name__)
 
 
 async def remind_if_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -226,7 +229,8 @@ async def reminder_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             time_str = f"{time_diff.seconds // 3600}시간 전"
                         else:
                             time_str = f"{time_diff.days}일 전"
-                    except:
+                    except Exception as e:
+                        logger.debug(f"리마인더 last_triggered 파싱 무시된 예외: {e}")
                         time_str = "N/A"
                 else:
                     time_str = "N/A"

@@ -13,7 +13,7 @@ from telegram.ext import ContextTypes
 import config
 
 KST = pytz.timezone('Asia/Seoul')
-ADMIN_USER_ID = 97057565
+ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 # 시트 위치 (3종 보고서)
 AWARD_SHEET_NAME = '수상보고창'

@@ -1,9 +1,12 @@
 """주간 봉사일정 및 총회 스케줄"""
 
+import logging
 import re
 import traceback
 from datetime import datetime, timedelta
 import pytz
+
+logger = logging.getLogger(__name__)
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from telegram import Update
@@ -60,7 +63,8 @@ def parse_date(text: str, default_year: int = None) -> datetime | None:
         if match:
             try:
                 return converter(match.groups())
-            except:
+            except Exception as e:
+                logger.debug(f"parse_date 변환 무시된 예외: {e}")
                 continue
     return None
 

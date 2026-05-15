@@ -14,7 +14,7 @@ from docx.shared import Cm, Pt, RGBColor
 import config
 
 KST = pytz.timezone('Asia/Seoul')
-ADMIN_USER_ID = 97057565
+ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 
 # ── 텔레그램 통신 ──────────────────────────────────────────────────────────────

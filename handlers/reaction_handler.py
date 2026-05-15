@@ -12,8 +12,14 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reactor_id not in AUTHORIZED_USERS:
         return
 
-    REACTION_EXCLUDE_GROUPS = config.get('reaction_exclude_groups', [-1002363981206])
     source_group_id = update.message_reaction.chat.id
+
+    # allowed_groups 화이트리스트 (defense-in-depth)
+    allowed_groups = config.get('allowed_groups', [])
+    if allowed_groups and source_group_id not in allowed_groups:
+        return
+
+    REACTION_EXCLUDE_GROUPS = config.get('reaction_exclude_groups', [-1002363981206])
     if source_group_id in REACTION_EXCLUDE_GROUPS:
         return
 

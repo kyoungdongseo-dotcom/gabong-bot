@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 AUTHORIZED_USERS = set(config.get('admin_ids') or [])
 
 REPORT_GROUP_ID = -1002777848839
-DOCX_RECIPIENT_ID = 754270008
+DOCX_RECIPIENT_ID = config.get('secretary_id', 754270008)
 MEDIA_GROUP_CACHE = {}
 
 # 텍스트 보고서 임시 저장 (사진 나중에 올 때 연결용)
@@ -550,6 +550,13 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     text = update.message.text
     thread_id = update.message.message_thread_id
+
+    # allowed_groups 화이트리스트 (DM 제외, defense-in-depth)
+    if update.effective_chat.type in ('group', 'supergroup'):
+        allowed_groups = config.get('allowed_groups', [])
+        if allowed_groups and chat_id not in allowed_groups:
+            return
+
     print(f"그룹 ID: {chat_id} | 토픽 ID: {thread_id} | 그룹명: {update.message.chat.title} | 메시지: {text}")
 
     log_message(chat_id, user_id, user_name, "user", text, thread_id)

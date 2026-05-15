@@ -25,7 +25,7 @@ KST = pytz.timezone('Asia/Seoul')
 
 MOU_GROUP_ID = -1002777848839
 MOU_TOPIC_ID = 3225
-MOU_RECIPIENT_ID = 754270008
+MOU_RECIPIENT_ID = config.get('secretary_id', 754270008)
 
 MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간',
                '사진1링크', '사진2링크', '사진3링크', '사진4링크', '사진5링크',
@@ -42,7 +42,7 @@ MOU_KEY_ALIASES = {
 }
 REQUIRED_FIELDS = {'협약명', '기관명', '협약일시'}
 
-ADMIN_USER_ID = 97057565
+ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 
 def _has_mou_keywords(text: str) -> bool:

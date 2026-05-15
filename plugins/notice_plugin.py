@@ -14,7 +14,7 @@ def register(app, config):
     app.add_handler(MessageHandler(
         filters.PHOTO & filters.CAPTION,
         broadcast_photo
-    ))
+    ), group=-1)
     app.add_handler(MessageHandler(
         filters.Document.ALL & filters.CAPTION,
         broadcast_document

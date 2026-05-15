@@ -10,7 +10,7 @@ from docx.oxml import OxmlElement
 import config
 
 KST = pytz.timezone('Asia/Seoul')
-DOCX_RECIPIENT_ID = 754270008
+DOCX_RECIPIENT_ID = config.get('secretary_id', 754270008)
 
 def set_cell_background(cell, color):
     tc = cell._tc

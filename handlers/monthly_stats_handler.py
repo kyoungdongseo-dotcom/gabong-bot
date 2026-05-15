@@ -1,9 +1,12 @@
+import logging
 import traceback
 from datetime import datetime, timedelta
 import pytz
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import config
+
+logger = logging.getLogger(__name__)
 
 KST = pytz.timezone('Asia/Seoul')
 
@@ -69,9 +72,11 @@ def analyze_monthly_stats():
                                 }
                             weekly_data[week_num]['rows'].append(row)
                         break
-                    except:
+                    except Exception as e:
+                        logger.debug(f"analyze_monthly_stats 날짜 파싱 무시된 예외: {e}")
                         continue
-            except:
+            except Exception as e:
+                logger.debug(f"analyze_monthly_stats 행 처리 무시된 예외: {e}")
                 continue
 
         result_rows = []

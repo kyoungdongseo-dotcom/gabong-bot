@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 import config
 
 KST = timezone(timedelta(hours=9))
-ADMIN_ID = 97057565
+ADMIN_ID = config.get('my_user_id', 97057565)
 BACKUP_DIR = "./data/backups"
 BACKUP_FILES = [
     "./data/gabong.db",

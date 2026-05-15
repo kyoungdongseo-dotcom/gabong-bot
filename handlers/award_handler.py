@@ -27,7 +27,7 @@ AWARD_SPREADSHEET_ID = '1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4'
 AWARD_SHEET_NAME = '수상보고창'
 AWARD_GROUP_ID = -1002777848839
 AWARD_TOPIC_ID = 3553
-AWARD_RECIPIENT_ID = 754270008
+AWARD_RECIPIENT_ID = config.get('secretary_id', 754270008)
 
 HEADERS = ['등록일시', '지역', '지부', '수상명', '수상일시', '장소',
            '수여자', '수상자', '수상내용',
@@ -40,7 +40,7 @@ AWARD_MEDIA_CACHE = {}       # media_group_id -> {photos, caption, processed, cr
 AWARD_PHOTOS_TTL = 600       # 10분 — 여러 앨범 누적 시간 고려
 MAX_PHOTOS = 10
 
-ADMIN_USER_ID = 97057565
+ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 
 def _alias_hint(field: str) -> str:

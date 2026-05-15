@@ -15,6 +15,7 @@ BACKUP_FILES = [
     "./data/gabong.db",
     "./data/bot_data.db",
     "./data/reminders.json",
+    "./config.json",
 ]
 
 

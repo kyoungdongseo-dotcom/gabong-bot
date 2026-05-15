@@ -10,7 +10,7 @@ from googleapiclient.discovery import build
 
 AUTHORIZED_USERS = set(config.get('admin_ids') or [])
 
-REPORT_GROUP_ID = -1002777848839
+REPORT_GROUP_ID = config.get('report_group_id', -1002777848839)
 DOCX_RECIPIENT_ID = config.get('secretary_id', 754270008)
 MEDIA_GROUP_CACHE = {}
 
@@ -28,7 +28,7 @@ ALBUM_WAIT_SECONDS = 7
 
 # 봉사보고서 화이트리스트 — 봉사공유창 토픽 (General) 만 처리 (2026-05-14)
 # mou/award 토픽은 각자 전용 핸들러가 자기 토픽 화이트리스트로 처리
-VOLUNTEER_TOPIC_ID = 2
+VOLUNTEER_TOPIC_ID = (config.get('report_topics', {}) or {}).get('service', 2)
 
 # 봉사보고서 필수 필드 (mou/award 패턴 적용)
 # 양식 키는 report_parser.py 의 _REPORT_KEY_ALIASES 와 일치

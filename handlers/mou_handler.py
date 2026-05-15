@@ -23,8 +23,8 @@ from handlers.report_parser_utils import parse_multiline_kv, extract_first_line_
 
 KST = pytz.timezone('Asia/Seoul')
 
-MOU_GROUP_ID = -1002777848839
-MOU_TOPIC_ID = 3225
+MOU_GROUP_ID = config.get('report_group_id', -1002777848839)
+MOU_TOPIC_ID = (config.get('report_topics', {}) or {}).get('mou', 3225)
 MOU_RECIPIENT_ID = config.get('secretary_id', 754270008)
 
 MOU_HEADERS = ['등록일시', '지역', '지부', '협약명', '기관명', '협약일시', '대표자', '협약기간',

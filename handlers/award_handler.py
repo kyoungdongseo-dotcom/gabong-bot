@@ -25,8 +25,8 @@ KST = pytz.timezone('Asia/Seoul')
 
 AWARD_SPREADSHEET_ID = '1MM79Y5rjOT-s8GnN1WGfnRb3Bq5iZA-Ro4fQzEGZoB4'
 AWARD_SHEET_NAME = '수상보고창'
-AWARD_GROUP_ID = -1002777848839
-AWARD_TOPIC_ID = 3553
+AWARD_GROUP_ID = config.get('report_group_id', -1002777848839)
+AWARD_TOPIC_ID = (config.get('report_topics', {}) or {}).get('award', 3553)
 AWARD_RECIPIENT_ID = config.get('secretary_id', 754270008)
 
 HEADERS = ['등록일시', '지역', '지부', '수상명', '수상일시', '장소',

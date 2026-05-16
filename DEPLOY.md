@@ -91,7 +91,7 @@ Railway 가 자동으로 `requirements.txt` 를 감지하고 빌드를 시작합
 Raw Editor 에 아래 내용 붙여넣기:
 
 ```
-TELEGRAM_TOKEN=8740092962:AAHnR-u7qcWyhQdIC9tVvCbh41pEBFavu58
+TELEGRAM_TOKEN=8528876168:AAF9xgBjm5KZnyqbvnh1vIXoRErroHPueNQ
 GROUP_ID=-1002363981206
 TOPIC_ID=2
 ADMIN_IDS=97057565

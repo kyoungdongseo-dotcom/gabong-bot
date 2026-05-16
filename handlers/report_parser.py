@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 import pytz
 from handlers.report_parser_utils import parse_multiline_kv, extract_first_line_meta
+from utils.tribe_resolver import validate_pair
 
 KST = pytz.timezone('Asia/Seoul')
 
@@ -33,7 +34,8 @@ def parse_report(text: str) -> dict | None:
 
     result = {
         '등록일시': datetime.now(KST).strftime('%Y-%m-%d %H:%M'),
-        '지파명': '', '교회명': '', '활동명': '', '봉사분류': '',
+        '지파명': '', '교회명': '', '연합회': '', '지부': '',
+        '활동명': '', '봉사분류': '',
         '활동일시': '', '활동장소': '', '수혜자수': '',
         '내부봉사자': '', '외부봉사자': '', '총봉사자': '',
         '활동내용': '', '반응특이사항': '', '참여인사': '',
@@ -43,20 +45,45 @@ def parse_report(text: str) -> dict | None:
         '사진6링크': '', '사진7링크': '', '사진8링크': '',
         '사진9링크': '', '사진10링크': '',
         '원본메시지': text,
+        # 정규화 결과 (dry-run): 'exact' | 'normalized' | 'wrong_pair' | 'unknown'
+        '_match': 'unknown',
+        '_match_error': '',
     }
 
-    # 지파명/교회명: 브래킷 형식 우선, 실패 시 첫 줄 토큰
-    title_match = re.search(r'\[(.+?지파)\s*(.+?교회)', text)
+    # 1차 추출: 브래킷 형식 우선, 실패 시 첫 줄 토큰
+    # 브래킷 내 첫 2개 토큰만 추출 (공백·]·뒤에 따라오는 키워드 무시)
+    raw_first = ''
+    raw_second = ''
+    title_match = re.search(r'\[([^\s\]]+)\s+([^\s\]]+)', text)
     if title_match:
-        result['지파명'] = title_match.group(1).strip()
-        result['교회명'] = title_match.group(2).strip()
+        raw_first = title_match.group(1).strip()
+        raw_second = title_match.group(2).strip()
     else:
         first_line = text.strip().splitlines()[0]
-        p1, p2 = extract_first_line_meta(
+        raw_first, raw_second = extract_first_line_meta(
             first_line, ['봉사 활동보고', '활동보고', '봉사보고']
         )
-        result['지파명'] = p1
-        result['교회명'] = p2
+
+    # 2차 정규화: tribe_resolver 로 양식(구/신) 양방향 매칭
+    entry, err = validate_pair(raw_first, raw_second)
+    if entry:
+        # 구 양식 / 신 양식 / 혼합 모두 정식명으로 정규화
+        result['지파명'] = entry['tribe_full']
+        result['교회명'] = entry['church']
+        result['연합회'] = entry['union']
+        result['지부'] = entry['branch']
+        # 사용자가 입력한 raw 와 정식명이 동일하면 'exact', 정규화 발생하면 'normalized'
+        if (raw_first in (entry['tribe_full'], entry['union'], entry['union_full'])
+                and raw_second in (entry['church'], entry['branch'])):
+            result['_match'] = 'exact'
+        else:
+            result['_match'] = 'normalized'
+    elif err:
+        # 잘못된 조합 또는 인식 실패 — raw 유지 + 에러 메시지 기록
+        result['지파명'] = raw_first
+        result['교회명'] = raw_second
+        result['_match'] = 'wrong_pair' if ('다른 지부' in err or '조합이 맞지 않습니다' in err) else 'unknown'
+        result['_match_error'] = err
 
     # 메타데이터 필드: 별칭 기반 유연한 파싱
     meta = parse_multiline_kv(text, _REPORT_KEY_ALIASES)

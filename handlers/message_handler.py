@@ -407,7 +407,7 @@ async def process_media_group(context, media_group_id: str):
                              message_id=origin.get('message_id'),
                              detail=caption[:120])
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                             detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+                             detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
             # 필수 필드 검증 (2026-05-14 추가, mou/award 패턴)
             if await _check_required_fields(report, user_id, context):
                 log_report_stage('service', 'parsed', 'fail',
@@ -509,7 +509,7 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                                  message_id=update.message.message_id,
                                  detail=caption[:120])
                 log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                                 detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+                                 detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
                 if await _check_required_fields(report, user_id, context):
                     log_report_stage('service', 'parsed', 'fail',
                                      user_id=user_id, detail='missing required fields')
@@ -587,7 +587,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                              message_id=update.message.message_id,
                              detail=text[:120])
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                             detail=f"{report.get('지파명','')} | {report.get('활동명','')}")
+                             detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
             if await _check_required_fields(report, user_id, context):
                 log_report_stage('service', 'parsed', 'fail',
                                  user_id=user_id, detail='missing required fields')

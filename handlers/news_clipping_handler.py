@@ -44,13 +44,14 @@ SEND_GAP_SEC = 0.3
 DM_DELETE_AFTER = 5
 
 CATEGORY_ICON: dict[str, str] = {
-    "봉사기회": "🎯",
-    "협업가능": "🤝",
-    "긴급이슈": "⚠️",
-    "협업키맨": "👤",
-    "정책": "📋",
-    "행사": "🎪",
-    "기타": "📰",
+    "🆘 봉사 시급": "🆘",
+    "🤝 봉사 기회": "🤝",
+    "👤 협업 키맨": "👤",
+    "📋 협업 정책": "📋",
+    "🏥 의료/복지": "🏥",
+    "⚠️ 재난재해": "⚠️",
+    "🌱 환경/지역": "🌱",
+    "📰 기타 정보": "📰",
 }
 
 
@@ -248,8 +249,8 @@ def _format_region_message(region: str, items: list[dict], week_label: str) -> s
         title = it.get("제목", "")
         link = it.get("링크", "")
         summary = it.get("요약", "")
-        category = it.get("카테고리", "") or "기타"
-        icon = CATEGORY_ICON.get(category, CATEGORY_ICON["기타"])
+        category = it.get("카테고리", "") or "📰 기타 정보"
+        icon = CATEGORY_ICON.get(category, CATEGORY_ICON["📰 기타 정보"])
         lines.append(f"{icon} ■ {area} ({category})")
         lines.append(title)
         lines.append(link)

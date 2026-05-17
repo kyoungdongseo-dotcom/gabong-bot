@@ -24,7 +24,7 @@ print("🔍 news_collector: 모듈 import 시작", flush=True)
 sys.stdout.flush()
 
 import config
-from services.news_categorizer import categorize
+from services.news_categorizer import categorize, score_news
 
 try:
     import feedparser  # 지방지 RSS
@@ -41,18 +41,6 @@ CANDIDATE_HEADERS = [
     "제목", "요약", "링크", "출처", "수집일시",
 ]
 MAX_PER_REGION = 30
-
-
-# 카테고리 점수 — 권역별 후보 시트 정렬용 (높을수록 상단)
-CATEGORY_SCORE: dict[str, int] = {
-    "봉사기회": 100,
-    "협업가능": 90,
-    "긴급이슈": 80,
-    "협업키맨": 70,
-    "정책": 50,
-    "행사": 40,
-    "기타": 10,
-}
 
 
 # tribes_mapping 의 union 이름과 권역명 정규화 (강원지역 → 강원)
@@ -432,24 +420,26 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
     by_region: dict[str, int] = {}
     for region, items in candidates.items():
         tribe = region_to_tribe.get(region, "")
-        # 1) 행 페이로드 준비 + 카테고리 태깅
+        # 1) 행 페이로드 준비 + 카테고리 태깅 + score_news 필터 (양수만)
         region_rows: list[tuple[int, list[Any]]] = []
         for it in items:
             title = it.get("title", "")
             summary = it.get("summary", "")
             link = it.get("link", "") or it.get("originallink", "")
             source = it.get("source", "")
+            score = score_news(title, summary)
+            if score <= 0:
+                continue
             local_area = _pick_local_area(title, summary, region)
             cat = categorize(title, summary)
-            score = CATEGORY_SCORE.get(cat, 0)
             region_rows.append((score, [
                 False, region, tribe, local_area, cat,
                 title, summary, link, source, now_str,
             ]))
-        # 2) 카테고리 점수 내림차순 (동점은 입력 순서 유지: Python sort 는 stable)
+        # 2) score_news 점수 내림차순 (동점은 입력 순서 유지: Python sort 는 stable)
         region_rows.sort(key=lambda r: r[0], reverse=True)
         rows.extend(row for _, row in region_rows)
-        by_region[region] = len(items)
+        by_region[region] = len(region_rows)
 
     if not rows:
         print("⚠️ 저장할 뉴스 후보 없음")

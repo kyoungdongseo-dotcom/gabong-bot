@@ -1,19 +1,28 @@
-"""뉴스 제목 + 요약 기반 5종 카테고리 분류 (정책/행사/이슈/인물/기타)."""
+"""뉴스 카테고리 분류 (봉사 효과성 기준 7개).
 
-CATEGORY_KEYWORDS = {
-    "정책": ["정책", "조례", "예산", "지원", "사업", "추진", "발표"],
-    "행사": ["축제", "행사", "박람회", "공연", "체험", "개최", "참여"],
-    "이슈": ["사고", "화재", "사망", "논란", "민원", "갈등", "고발"],
-    "인물": ["시장", "도지사", "구청장", "임명", "취임", "당선"],
-}
+우선순위: 봉사기회 → 협업가능 → 긴급이슈 → 협업키맨 → 정책 → 행사 → 기타.
+"""
 
-CATEGORY_ORDER = ["이슈", "인물", "정책", "행사"]
+SERVICE_OPPORTUNITY_KW = ["축제", "박람회", "체험", "마라톤", "행진", "시민참여", "어울림", "걷기대회"]
+COOPERATION_KW = ["봉사", "캠페인", "후원", "협약", "MOU", "지원사업", "보조금", "공모", "모집"]
+URGENT_KW = ["재난", "이재민", "수해", "산불", "한파", "폭염", "사고", "화재", "사망", "긴급"]
+KEYMAN_KW = ["시장", "구청장", "군수", "기관장", "임명", "취임", "방문"]
+POLICY_KW = ["정책", "조례", "예산", "발표", "추진"]
+EVENT_KW = ["행사", "개최", "전시", "공연"]
 
 
-def categorize(title: str, summary: str = "") -> str:
-    text = f"{title or ''} {summary or ''}"
-    for cat in CATEGORY_ORDER:
-        for kw in CATEGORY_KEYWORDS[cat]:
-            if kw in text:
-                return cat
+def categorize(title: str, summary: str) -> str:
+    text = (title or "") + " " + (summary or "")
+    if any(kw in text for kw in SERVICE_OPPORTUNITY_KW):
+        return "봉사기회"
+    if any(kw in text for kw in COOPERATION_KW):
+        return "협업가능"
+    if any(kw in text for kw in URGENT_KW):
+        return "긴급이슈"
+    if any(kw in text for kw in KEYMAN_KW):
+        return "협업키맨"
+    if any(kw in text for kw in POLICY_KW):
+        return "정책"
+    if any(kw in text for kw in EVENT_KW):
+        return "행사"
     return "기타"

@@ -25,7 +25,7 @@ from services.news_collector import (
     REGION_QUERY_MAP, collect_all_regions, save_candidates_to_sheet,
     _ensure_worksheet, _get_gspread_client,
 )
-from utils.sinchunji_date import get_sinchunji_week_label
+from utils.week_label import get_week_label
 
 KST = pytz.timezone("Asia/Seoul")
 
@@ -40,6 +40,16 @@ SETTINGS_HEADERS = ["권역", "지파", "그룹ID", "토픽ID", "활성"]
 
 SEND_GAP_SEC = 0.3
 DM_DELETE_AFTER = 5
+
+CATEGORY_ICON: dict[str, str] = {
+    "봉사기회": "🎯",
+    "협업가능": "🤝",
+    "긴급이슈": "⚠️",
+    "협업키맨": "👤",
+    "정책": "📋",
+    "행사": "🎪",
+    "기타": "📰",
+}
 
 
 # 권역 ↔ 지파 매핑 (tribes_mapping union 이름과 다른 케이스 "강원지역" 보정)
@@ -236,7 +246,9 @@ def _format_region_message(region: str, items: list[dict], week_label: str) -> s
         title = it.get("제목", "")
         link = it.get("링크", "")
         summary = it.get("요약", "")
-        lines.append(f"■ {area}")
+        category = it.get("카테고리", "") or "기타"
+        icon = CATEGORY_ICON.get(category, CATEGORY_ICON["기타"])
+        lines.append(f"{icon} ■ {area} ({category})")
         lines.append(title)
         lines.append(link)
         lines.append(f"✅ {summary}")
@@ -343,7 +355,7 @@ async def cmd_send_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         region = r.get("권역", "")
         by_region.setdefault(region, []).append((sheet_row, r))
 
-    week_label = get_sinchunji_week_label()
+    week_label = get_week_label()
 
     # 발송: 활성 권역만 + 빈 권역은 "특이사항 없음" 발송
     success = 0

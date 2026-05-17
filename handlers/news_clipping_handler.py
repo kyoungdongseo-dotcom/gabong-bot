@@ -261,27 +261,47 @@ def _format_region_message(region: str, items: list[dict], week_label: str) -> s
 # ── 명령어 ────────────────────────────────────────────────────────────────────
 
 async def cmd_news_collect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"🔍 cmd_news_collect 호출 by {update.effective_user.id if update.effective_user else '?'}", flush=True)
     if await _deny(update, context):
         return
 
-    progress = await update.message.reply_text("📰 뉴스 수집 중...")
+    progress = await update.message.reply_text("📰 뉴스 수집 중... (최대 3분)")
+    print("🔍 collect_all_regions 호출 시작", flush=True)
     try:
-        candidates = await collect_all_regions()
+        candidates = await asyncio.wait_for(
+            collect_all_regions(),
+            timeout=180,  # 3분 safety
+        )
+        total = sum(len(v) for v in candidates.values())
+        print(f"🔍 collect_all_regions 완료: {total}건", flush=True)
+    except asyncio.TimeoutError:
+        print("❌ 전체 수집 timeout (3분 초과)", flush=True)
+        await progress.edit_text("❌ 수집 시간 초과 (3분). 다시 시도해주세요.")
+        await _notify_admin(context.bot, "❌ /news_collect timeout (180s 초과)")
+        return
     except ValueError as e:
         await progress.edit_text(f"❌ 수집 실패: {e}")
         await _notify_admin(context.bot, f"❌ /news_collect 환경설정 오류: {e}")
         return
     except Exception as e:
+        print(f"❌ 수집 실패: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         await progress.edit_text(f"❌ 수집 중 예외: {str(e)[:200]}")
         await _notify_admin(context.bot, f"❌ /news_collect 예외: {e}")
         return
 
     try:
+        print("🔍 save_candidates_to_sheet 호출", flush=True)
         await _ensure_settings_seed_async()
         result = await asyncio.to_thread(
             save_candidates_to_sheet, candidates, REGION_TO_TRIBE
         )
+        print("✅ 시트 저장 완료", flush=True)
     except Exception as e:
+        print(f"❌ 시트 저장 실패: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         await progress.edit_text(f"❌ 시트 저장 실패: {str(e)[:200]}")
         await _notify_admin(context.bot, f"❌ /news_collect 시트 저장 실패: {e}")
         return

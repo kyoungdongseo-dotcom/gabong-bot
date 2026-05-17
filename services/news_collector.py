@@ -11,6 +11,7 @@ import asyncio
 import html
 import os
 import re
+import socket
 import sys
 import time
 from datetime import datetime
@@ -109,14 +110,14 @@ REGION_QUERY_MAP: dict[str, list[str]] = {
 print(f"🔍 news_collector: REGION_QUERY_MAP 로드 완료 ({len(REGION_QUERY_MAP)}권역)", flush=True)
 
 
-REGION_RSS_MAP: dict[str, str] = {
-    "강원": "https://www.kwnews.co.kr/rss/allArticle.xml",
-    "대구경북": "https://news.imaeil.com/rss/all.xml",
-    "부산경남서부": "https://www.busan.com/rss/news.xml",
-    "부산경남동부": "https://www.busan.com/rss/news.xml",
-    "전북": "https://www.domin.co.kr/rss/allArticle.xml",
-    "대전충청": "https://www.daejonilbo.com/rss/allArticle.xml",
-}
+# Phase 1: 작동 검증된 RSS만 유지 (2026-05-17 curl 점검 결과 6개 모두 dead)
+#   - kwnews.co.kr: 302 → 홈으로 redirect (RSS 폐기)
+#   - news.imaeil.com: 301 → imaeil.com 홈
+#   - busan.com: 403 forbidden
+#   - domin.co.kr: 302 → 외부 error 페이지
+#   - daejonilbo.com: 404
+# Phase 2 에서 메이저 지방지 RSS URL 재수집 예정 — 현재는 네이버 검색 API 만으로 운영
+REGION_RSS_MAP: dict[str, str] = {}
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -188,7 +189,7 @@ def collect_naver_news(query: str, display: int = 30) -> list[dict]:
         resp.raise_for_status()
         items = resp.json().get("items", [])
     except Exception as e:
-        print(f"⚠️ 네이버 API 실패 (query='{query}'): {e}")
+        print(f"⚠️ 네이버 API 실패 (query='{query}'): {e}", flush=True)
         return []
 
     out: list[dict] = []
@@ -207,12 +208,15 @@ def collect_naver_news(query: str, display: int = 30) -> list[dict]:
 def collect_local_paper_rss(rss_url: str) -> list[dict]:
     """지방지 RSS 수집. feedparser 미설치 시 빈 리스트."""
     if feedparser is None:
-        print(f"⚠️ feedparser 미설치 — RSS 스킵: {rss_url}")
+        print(f"⚠️ feedparser 미설치 — RSS 스킵: {rss_url}", flush=True)
         return []
+    # feedparser는 자체 timeout 옵션 없음 → socket 레벨로 10초 강제
+    prev_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(10)
     try:
         d = feedparser.parse(rss_url, request_headers={"User-Agent": USER_AGENT})
         if getattr(d, "bozo", False) and not getattr(d, "entries", None):
-            print(f"⚠️ RSS 파싱 실패 (entries 없음): {rss_url}")
+            print(f"⚠️ RSS 파싱 실패 (entries 없음): {rss_url}", flush=True)
             return []
         out: list[dict] = []
         for e in d.entries[:60]:
@@ -226,8 +230,10 @@ def collect_local_paper_rss(rss_url: str) -> list[dict]:
             })
         return out
     except Exception as e:
-        print(f"⚠️ RSS 수집 실패 ({rss_url}): {e}")
+        print(f"⚠️ RSS 수집 실패 ({rss_url}): {e}", flush=True)
         return []
+    finally:
+        socket.setdefaulttimeout(prev_timeout)
 
 
 def _parse_pubdate(s: str) -> float:
@@ -248,9 +254,10 @@ def _parse_pubdate(s: str) -> float:
 
 
 def _collect_for_region_sync(region: str, target: int = 20) -> list[dict]:
+    print(f"🔍 {region}: 수집 시작", flush=True)
     queries = REGION_QUERY_MAP.get(region, [])
     if not queries:
-        print(f"⚠️ 권역 매핑 없음: {region}")
+        print(f"⚠️ 권역 매핑 없음: {region}", flush=True)
         return []
 
     raw: list[dict] = []
@@ -261,7 +268,9 @@ def _collect_for_region_sync(region: str, target: int = 20) -> list[dict]:
         raise  # API 키 없음은 상위로 전파
 
     # 시군구 쿼리 (앞에서 N개)
-    for q in queries[: min(len(queries), 8)]:
+    sigungu_queries = queries[: min(len(queries), 8)]
+    print(f"🔍 {region}: NAVER API 호출 {1 + len(sigungu_queries)}개", flush=True)
+    for q in sigungu_queries:
         raw.extend(collect_naver_news(q, display=10))
 
     rss_url = REGION_RSS_MAP.get(region)
@@ -289,33 +298,51 @@ def _collect_for_region_sync(region: str, target: int = 20) -> list[dict]:
     # 최신순 정렬
     filtered.sort(key=lambda x: _parse_pubdate(x.get("pubDate", "")), reverse=True)
 
-    return filtered[:MAX_PER_REGION]
+    result = filtered[:MAX_PER_REGION]
+    print(f"🔍 {region}: 수집 완료 {len(result)}건", flush=True)
+    return result
 
 
 async def collect_for_region(region: str, target: int = 20) -> list[dict]:
-    return await asyncio.to_thread(_collect_for_region_sync, region, target)
+    try:
+        return await asyncio.to_thread(_collect_for_region_sync, region, target)
+    except ValueError:
+        # API 키 누락 — 상위로 전파 (사용자에게 명시적 에러 노출)
+        raise
+    except Exception as e:
+        print(f"❌ {region}: 실패 - {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 async def collect_all_regions() -> dict[str, list[dict]]:
     """12권역 병렬 수집."""
     regions = list(REGION_QUERY_MAP.keys())
-    print(f"📰 뉴스 수집 시작 — {len(regions)}개 권역")
+    print(f"📰 뉴스 수집 시작 — {len(regions)}개 권역", flush=True)
     started = time.time()
 
-    results = await asyncio.gather(
-        *(collect_for_region(r) for r in regions),
-        return_exceptions=True,
-    )
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *(collect_for_region(r) for r in regions),
+                return_exceptions=True,
+            ),
+            timeout=120,  # 12권역 전체 최대 2분
+        )
+    except asyncio.TimeoutError:
+        print("❌ 전체 수집 timeout (120초 초과)", flush=True)
+        return {r: [] for r in regions}
 
     out: dict[str, list[dict]] = {}
     for region, res in zip(regions, results):
         if isinstance(res, Exception):
-            print(f"❌ 수집 실패 [{region}]: {res}")
+            print(f"❌ 수집 실패 [{region}]: {res}", flush=True)
             out[region] = []
             continue
         out[region] = res
-        print(f"  ✓ {region}: {len(res)}건")
-    print(f"📰 뉴스 수집 완료 ({time.time() - started:.1f}s)")
+        print(f"  ✓ {region}: {len(res)}건", flush=True)
+    print(f"📰 뉴스 수집 완료 ({time.time() - started:.1f}s)", flush=True)
     return out
 
 

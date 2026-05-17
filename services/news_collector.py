@@ -24,7 +24,7 @@ print("🔍 news_collector: 모듈 import 시작", flush=True)
 sys.stdout.flush()
 
 import config
-from services.news_categorizer import MIN_SCORE, categorize, score_news
+from services.news_categorizer import MIN_SCORE, categorize, get_source_bonus, score_news
 
 try:
     import feedparser  # 지방지 RSS
@@ -80,20 +80,49 @@ def build_region_query_map() -> dict[str, list[str]]:
 
 # Phase 2: build_region_query_map() 자동 빌드 보류
 # (Oracle systemd 환경 부팅 멈춤 회피 — 추후 원인 확정 후 복원)
-print("🔍 news_collector: REGION_QUERY_MAP 미니멀 17개 로드 시작", flush=True)
+# Phase 2-B (2026-05-17): 시군구 + 봉사 도메인 조합 (봉사/복지/취약계층)
+#   입력 단계에서 봉사 신호 강화 → false positive 감소 (옵션 B b-1)
+print("🔍 news_collector: REGION_QUERY_MAP 봉사 도메인 조합 로드 시작", flush=True)
 REGION_QUERY_MAP: dict[str, list[str]] = {
-    "서울경기남부": ["서울 강남", "경기 수원"],
-    "서울경기북부": ["서울 강북", "경기 의정부"],
-    "서울경기동부": ["서울 광진", "경기 남양주"],
-    "서울경기서부": ["서울 영등포", "경기 부천"],
-    "인천": ["인천"],
-    "강원": ["강원도"],
-    "대구경북": ["대구", "경북"],
-    "대전충청": ["대전", "충청"],
-    "전북": ["전북"],
-    "광주전남": ["광주", "전남"],
-    "부산경남서부": ["부산 서구", "경남 창원"],
-    "부산경남동부": ["부산 해운대", "울산"],
+    "서울경기남부": [
+        "서울 강남 봉사", "서울 강남 복지", "서울 강남 취약계층",
+        "경기 수원 봉사", "경기 수원 복지", "경기 수원 취약계층",
+    ],
+    "서울경기북부": [
+        "서울 강북 봉사", "서울 강북 복지", "서울 강북 취약계층",
+        "경기 의정부 봉사", "경기 의정부 복지", "경기 의정부 취약계층",
+    ],
+    "서울경기동부": [
+        "서울 광진 봉사", "서울 광진 복지", "서울 광진 취약계층",
+        "경기 남양주 봉사", "경기 남양주 복지", "경기 남양주 취약계층",
+    ],
+    "서울경기서부": [
+        "서울 영등포 봉사", "서울 영등포 복지", "서울 영등포 취약계층",
+        "경기 부천 봉사", "경기 부천 복지", "경기 부천 취약계층",
+    ],
+    "인천": ["인천 봉사", "인천 복지", "인천 취약계층"],
+    "강원": ["강원도 봉사", "강원도 복지", "강원도 취약계층"],
+    "대구경북": [
+        "대구 봉사", "대구 복지", "대구 취약계층",
+        "경북 봉사", "경북 복지", "경북 취약계층",
+    ],
+    "대전충청": [
+        "대전 봉사", "대전 복지", "대전 취약계층",
+        "충청 봉사", "충청 복지", "충청 취약계층",
+    ],
+    "전북": ["전북 봉사", "전북 복지", "전북 취약계층"],
+    "광주전남": [
+        "광주 봉사", "광주 복지", "광주 취약계층",
+        "전남 봉사", "전남 복지", "전남 취약계층",
+    ],
+    "부산경남서부": [
+        "부산 서구 봉사", "부산 서구 복지",
+        "경남 창원 봉사", "경남 창원 복지", "경남 창원 취약계층",
+    ],
+    "부산경남동부": [
+        "부산 해운대 봉사", "부산 해운대 복지",
+        "울산 봉사", "울산 복지", "울산 취약계층",
+    ],
 }
 print(f"🔍 news_collector: REGION_QUERY_MAP 로드 완료 ({len(REGION_QUERY_MAP)}권역)", flush=True)
 
@@ -428,7 +457,7 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
             summary = it.get("summary", "")
             link = it.get("link", "") or it.get("originallink", "")
             source = it.get("source", "")
-            score = score_news(title, summary)
+            score = score_news(title, summary) + get_source_bonus(link)
             if score < MIN_SCORE:
                 continue
             local_area = _pick_local_area(title, summary, region)

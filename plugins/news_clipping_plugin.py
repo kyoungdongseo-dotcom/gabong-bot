@@ -15,7 +15,7 @@ print("🔍 news_clipping_plugin: telegram.ext import 완료", flush=True)
 sys.stdout.flush()
 
 from handlers.news_clipping_handler import (
-    cmd_news_collect, cmd_news_status, cmd_send_news,
+    cmd_news_collect, cmd_news_exclude, cmd_news_status, cmd_send_news,
     scheduled_weekly_collect,
 )
 
@@ -28,7 +28,8 @@ def register(app, config=None):
     app.add_handler(CommandHandler("send_news", cmd_send_news))
     app.add_handler(CommandHandler("news_status", cmd_news_status))
     app.add_handler(CommandHandler("news_collect", cmd_news_collect))
-    print("✅ /send_news, /news_status, /news_collect 등록 완료", flush=True)
+    app.add_handler(CommandHandler("news_exclude", cmd_news_exclude))
+    print("✅ /send_news, /news_status, /news_collect, /news_exclude 등록 완료", flush=True)
     print("로딩: news_clipping", flush=True)
 
 

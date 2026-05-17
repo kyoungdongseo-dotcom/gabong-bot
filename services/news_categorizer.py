@@ -120,6 +120,83 @@ EXCLUDE_KEYWORDS = {
 # 시트 저장 임계값 — 부분 키워드 매칭만으로 통과 방지 (호출측: news_collector.py)
 MIN_SCORE = 50
 
+# 출처 사이트 신뢰도 (옵션 B d-1) — host 부분 매칭
+# 봉사/복지/지역신문 = 가산, 연예/스포츠/부동산 = 감산
+SOURCE_BONUS: dict[str, int] = {
+    # 봉사/복지 전문 매체 (+80)
+    "welfarenews.net": 80,
+    "bokjinews.com": 80,
+    "kdwelfare.or.kr": 80,
+    "ngocenter.or.kr": 80,
+    # 지역 신문 (+50)
+    "kyeongi.com": 50,       # 경기일보
+    "ihalla.com": 50,        # 한라일보
+    "kyeongin.com": 50,      # 경인일보
+    "kwangju.co.kr": 50,     # 광주일보
+    "joongdo.co.kr": 50,     # 중도일보
+    "kwnews.co.kr": 50,      # 강원일보
+    "domin.co.kr": 50,       # 전북도민일보
+    "jjn.co.kr": 50,         # 전북일보
+    # 공공기관/지자체 (+30~50)
+    "gov.kr": 50,
+    "go.kr": 30,
+    "or.kr": 30,
+    # 연예/엔터 (-100)
+    "entertain.naver.com": -100,
+    "starin.naver.com": -100,
+    "tenasia.hankyung.com": -100,
+    "newsen.com": -100,
+    # 스포츠 (-100)
+    "sports.naver.com": -100,
+    "stoo.com": -100,
+    "spotvnews.co.kr": -100,
+    # 부동산 전문 (-80~100)
+    "land.naver.com": -100,
+    "rzine.kr": -80,
+    # 금융/증권 (-50~80)
+    "einfomax.co.kr": -80,
+    "moneys.co.kr": -50,
+}
+
+
+def get_source_bonus(link: str) -> int:
+    """링크 호스트로 출처 신뢰도 보너스 계산. 부분 매칭 (예: 'gov.kr' in 'www.seoul.gov.kr')."""
+    if not link:
+        return 0
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(link).hostname or "").lower()
+    except Exception:
+        return 0
+    if not host:
+        return 0
+    for key, bonus in SOURCE_BONUS.items():
+        if key in host:
+            return bonus
+    return 0
+
+
+# 운영자 즉시 추가 키워드 (옵션 B c-2) — /news_exclude 명령으로 갱신
+# 봇 재시작 시 재로딩 (런타임 갱신은 cmd_news_exclude 내부에서 dict 직접 수정 + 파일 저장)
+CUSTOM_KEYWORDS_PATH = "data/custom_keywords.json"
+
+
+def _load_custom_keywords() -> dict:
+    import json
+    import os
+    if not os.path.exists(CUSTOM_KEYWORDS_PATH):
+        return {}
+    try:
+        with open(CUSTOM_KEYWORDS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️ custom_keywords.json 로딩 실패: {e}", flush=True)
+        return {}
+
+
+CUSTOM_KEYWORDS: dict = _load_custom_keywords()
+print(f"🔍 news_categorizer: CUSTOM_KEYWORDS 로드 완료 ({len(CUSTOM_KEYWORDS)}개)", flush=True)
+
 
 def categorize(title: str, summary: str) -> str:
     text = (title or "") + " " + (summary or "")
@@ -140,4 +217,8 @@ def score_news(title: str, description: str = "") -> int:
     for kw, penalty in EXCLUDE_KEYWORDS.items():
         if kw in text_original:
             score += penalty
+    # 운영자 즉시 추가 키워드 (양수/음수 모두 가능)
+    for kw, pts in CUSTOM_KEYWORDS.items():
+        if kw in text_original:
+            score += pts
     return score

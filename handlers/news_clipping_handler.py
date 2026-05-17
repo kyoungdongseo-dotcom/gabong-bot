@@ -506,3 +506,56 @@ async def scheduled_weekly_collect(bot=None):
             lines.append(f"  • {region}: {by_region.get(region, 0)}건")
         await _notify_admin(bot, "\n".join(lines))
     _ = time  # noqa: prevent linter unused
+
+
+async def cmd_news_exclude(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/news_exclude 키워드 점수 — CUSTOM_KEYWORDS 즉시 추가 (옵션 B c-2)."""
+    print(f"🔍 cmd_news_exclude 호출 by {update.effective_user.id if update.effective_user else '?'}", flush=True)
+    if await _deny(update, context):
+        return
+
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text(
+            "사용법: /news_exclude 키워드 점수\n"
+            "예: /news_exclude 신곡 -150\n"
+            "양수도 가능: /news_exclude 봉사단 +60\n"
+            "(다음 /news_collect 부터 적용 — 봇 재시작 후에도 유지)"
+        )
+        return
+
+    keyword = args[0]
+    try:
+        score = int(args[1])
+    except ValueError:
+        await update.message.reply_text("점수는 숫자 (예: -150)")
+        return
+
+    import json
+    import os
+    from services import news_categorizer
+    path = news_categorizer.CUSTOM_KEYWORDS_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    custom = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+        except Exception as e:
+            print(f"⚠️ custom_keywords.json 읽기 실패: {e}", flush=True)
+    custom[keyword] = score
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(custom, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        await update.message.reply_text(f"❌ 저장 실패: {e}")
+        return
+
+    # 런타임 dict 도 즉시 갱신 (봇 재시작 없이 다음 호출부터 반영)
+    news_categorizer.CUSTOM_KEYWORDS[keyword] = score
+
+    await update.message.reply_text(
+        f"✅ 키워드 추가: '{keyword}' = {score:+d}점\n"
+        f"다음 /news_collect 부터 적용 (즉시 런타임 반영됨)\n"
+        f"현재 custom 키워드 {len(custom)}개"
+    )

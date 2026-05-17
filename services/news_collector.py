@@ -421,6 +421,7 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
     for region, items in candidates.items():
         tribe = region_to_tribe.get(region, "")
         # 1) 행 페이로드 준비 + 카테고리 태깅 + score_news 필터 (양수만)
+        total_count = len(items)
         region_rows: list[tuple[int, list[Any]]] = []
         for it in items:
             title = it.get("title", "")
@@ -436,6 +437,8 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
                 False, region, tribe, local_area, cat, score,
                 title, summary, link, source, now_str,
             ]))
+        filtered_count = len(region_rows)
+        print(f"🔍 {region}: 양수 통과 {filtered_count}/{total_count}", flush=True)
         # 2) score_news 점수 내림차순 (동점은 입력 순서 유지: Python sort 는 stable)
         region_rows.sort(key=lambda r: r[0], reverse=True)
         rows.extend(row for _, row in region_rows)

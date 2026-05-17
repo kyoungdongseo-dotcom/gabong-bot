@@ -11,6 +11,8 @@
 권한: AUTHORIZED_USERS = config.admin_ids (6명).
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from datetime import datetime

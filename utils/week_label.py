@@ -13,6 +13,8 @@
 - 11월(1=일, 첫 일요일=1): 11/1~11/7 = 1째주
 """
 
+from __future__ import annotations
+
 from datetime import date, timedelta
 
 

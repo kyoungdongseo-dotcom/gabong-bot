@@ -5,6 +5,8 @@
 - 호출 진입점: collect_all_regions() / save_candidates_to_sheet()
 """
 
+from __future__ import annotations
+
 import asyncio
 import html
 import os

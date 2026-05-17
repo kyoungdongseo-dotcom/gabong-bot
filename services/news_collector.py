@@ -11,12 +11,16 @@ import asyncio
 import html
 import os
 import re
+import sys
 import time
 from datetime import datetime
 from typing import Any
 
 import pytz
 import requests
+
+print("🔍 news_collector: 모듈 import 시작", flush=True)
+sys.stdout.flush()
 
 import config
 from services.news_categorizer import categorize
@@ -62,6 +66,9 @@ def build_region_query_map() -> dict[str, list[str]]:
     각 지부의 aliases[0] (없으면 church 에서 '교회' 제거) 를 대표 시군구 토큰으로 사용.
     권역(union) 이름은 _UNION_TO_REGION 으로 정규화.
     중복 토큰 제거.
+
+    NOTE: Phase 2 자동 빌드 보류 — 현재 부팅 멈춤 회피 위해 import 시 호출 안 함.
+    아래 미니멀 17개 쿼리 하드코딩 사용.
     """
     from utils.tribes_mapping import TRIBES
 
@@ -82,7 +89,24 @@ def build_region_query_map() -> dict[str, list[str]]:
     return out
 
 
-REGION_QUERY_MAP: dict[str, list[str]] = build_region_query_map()
+# Phase 2: build_region_query_map() 자동 빌드 보류
+# (Oracle systemd 환경 부팅 멈춤 회피 — 추후 원인 확정 후 복원)
+print("🔍 news_collector: REGION_QUERY_MAP 미니멀 17개 로드 시작", flush=True)
+REGION_QUERY_MAP: dict[str, list[str]] = {
+    "서울경기남부": ["서울 강남", "경기 수원"],
+    "서울경기북부": ["서울 강북", "경기 의정부"],
+    "서울경기동부": ["서울 광진", "경기 남양주"],
+    "서울경기서부": ["서울 영등포", "경기 부천"],
+    "인천": ["인천"],
+    "강원": ["강원도"],
+    "대구경북": ["대구", "경북"],
+    "대전충청": ["대전", "충청"],
+    "전북": ["전북"],
+    "광주전남": ["광주", "전남"],
+    "부산경남서부": ["부산 서구", "경남 창원"],
+    "부산경남동부": ["부산 해운대", "울산"],
+}
+print(f"🔍 news_collector: REGION_QUERY_MAP 로드 완료 ({len(REGION_QUERY_MAP)}권역)", flush=True)
 
 
 REGION_RSS_MAP: dict[str, str] = {
@@ -415,3 +439,7 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
     print(f"✅ 후보 시트 저장: {len(rows)}건 (행 {start_row_idx + 1} ~ {end_row_idx})")
     _ = existing  # avoid unused warning in some linters
     return {"appended": len(rows), "by_region": by_region}
+
+
+print("🔍 news_collector: 모듈 import 완료", flush=True)
+sys.stdout.flush()

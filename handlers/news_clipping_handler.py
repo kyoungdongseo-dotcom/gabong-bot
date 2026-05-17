@@ -468,13 +468,31 @@ async def _ensure_settings_seed_async():
 
 async def scheduled_weekly_collect(bot=None):
     """일요일 22:00 KST APScheduler 호출."""
-    print(f"⏰ scheduled_weekly_collect 실행 ({datetime.now(KST).isoformat()})")
+    print(f"⏰ scheduled_weekly_collect 실행 ({datetime.now(KST).isoformat()})", flush=True)
     try:
-        candidates = await collect_all_regions()
+        candidates = await asyncio.wait_for(
+            collect_all_regions(),
+            timeout=180,  # 3분 safety (cmd_news_collect 와 동일)
+        )
+        total = sum(len(v) for v in candidates.values())
+        print(f"🔍 scheduled_weekly_collect 수집 완료: {total}건", flush=True)
+    except asyncio.TimeoutError:
+        print("❌ scheduled_weekly_collect timeout (180초 초과)", flush=True)
+        if bot:
+            await _notify_admin(
+                bot,
+                "❌ 주간 자동 수집 시간 초과 (3분).\n수동으로 /news_collect 시도 필요.",
+            )
+        return
     except ValueError as e:
-        await _notify_admin(bot, f"❌ 주간 뉴스 수집 환경설정 오류: {e}") if bot else None
+        print(f"❌ scheduled_weekly_collect 환경설정 오류: {e}", flush=True)
+        if bot:
+            await _notify_admin(bot, f"❌ 주간 뉴스 수집 환경설정 오류: {e}")
         return
     except Exception as e:
+        print(f"❌ scheduled_weekly_collect 실패: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         if bot:
             await _notify_admin(bot, f"❌ 주간 뉴스 수집 예외: {e}")
         return
@@ -484,7 +502,11 @@ async def scheduled_weekly_collect(bot=None):
         result = await asyncio.to_thread(
             save_candidates_to_sheet, candidates, REGION_TO_TRIBE
         )
+        print("✅ scheduled_weekly_collect 시트 저장 완료", flush=True)
     except Exception as e:
+        print(f"❌ scheduled_weekly_collect 시트 저장 실패: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         if bot:
             await _notify_admin(bot, f"❌ 주간 뉴스 시트 저장 실패: {e}")
         return

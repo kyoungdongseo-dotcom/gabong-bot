@@ -37,7 +37,7 @@ USER_AGENT = "GAbongBot/1.0 (+https://github.com/anthropics/claude-code)"
 
 CANDIDATE_SHEET = "주간뉴스후보"
 CANDIDATE_HEADERS = [
-    "발송", "권역", "지파", "지역", "카테고리",
+    "발송", "권역", "지파", "지역", "카테고리", "점수",
     "제목", "요약", "링크", "출처", "수집일시",
 ]
 MAX_PER_REGION = 30
@@ -433,7 +433,7 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
             local_area = _pick_local_area(title, summary, region)
             cat = categorize(title, summary)
             region_rows.append((score, [
-                False, region, tribe, local_area, cat,
+                False, region, tribe, local_area, cat, score,
                 title, summary, link, source, now_str,
             ]))
         # 2) score_news 점수 내림차순 (동점은 입력 순서 유지: Python sort 는 stable)

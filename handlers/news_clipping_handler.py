@@ -43,18 +43,6 @@ SETTINGS_HEADERS = ["권역", "지파", "그룹ID", "토픽ID", "활성"]
 SEND_GAP_SEC = 0.3
 DM_DELETE_AFTER = 5
 
-CATEGORY_ICON: dict[str, str] = {
-    "🆘 봉사 시급": "🆘",
-    "🤝 봉사 기회": "🤝",
-    "👤 협업 키맨": "👤",
-    "📋 협업 정책": "📋",
-    "🏥 의료/복지": "🏥",
-    "⚠️ 재난재해": "⚠️",
-    "🌱 환경/지역": "🌱",
-    "📰 기타 정보": "📰",
-}
-
-
 # 권역 ↔ 지파 매핑 (tribes_mapping union 이름과 다른 케이스 "강원지역" 보정)
 REGION_TO_TRIBE: dict[str, str] = {
     "서울경기남부": "요한",
@@ -250,8 +238,7 @@ def _format_region_message(region: str, items: list[dict], week_label: str) -> s
         link = it.get("링크", "")
         summary = it.get("요약", "")
         category = it.get("카테고리", "") or "📰 기타 정보"
-        icon = CATEGORY_ICON.get(category, CATEGORY_ICON["📰 기타 정보"])
-        lines.append(f"{icon} ■ {area} ({category})")
+        lines.append(f"■ {area} ({category})")
         lines.append(title)
         lines.append(link)
         lines.append(f"✅ {summary}")

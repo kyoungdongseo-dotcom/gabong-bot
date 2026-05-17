@@ -24,7 +24,7 @@ print("🔍 news_collector: 모듈 import 시작", flush=True)
 sys.stdout.flush()
 
 import config
-from services.news_categorizer import categorize, score_news
+from services.news_categorizer import MIN_SCORE, categorize, score_news
 
 try:
     import feedparser  # 지방지 RSS
@@ -429,7 +429,7 @@ def save_candidates_to_sheet(candidates: dict[str, list[dict]],
             link = it.get("link", "") or it.get("originallink", "")
             source = it.get("source", "")
             score = score_news(title, summary)
-            if score <= 0:
+            if score < MIN_SCORE:
                 continue
             local_area = _pick_local_area(title, summary, region)
             cat = categorize(title, summary)

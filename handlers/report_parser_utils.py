@@ -74,7 +74,21 @@ def parse_multiline_kv(text: str, key_aliases: dict) -> dict:
                 elif current_field:
                     result[current_field] += ' ' + stripped
         else:
-            # 콜론 없음
+            # 콜론 없음 — '■ 키(메타)값' 또는 '■ 키(메타)\n값' 패턴 처리 (2026-05-18)
+            # Why: 사용자가 콜론 빼먹은 양식 흔함. "■ 활동 성과(수치데이터 포함)420L" 처럼
+            #     괄호로 메타 표기 + 그 뒤 곧바로 값이 붙는 케이스 + 값 다음 줄 케이스.
+            paren_match = (
+                re.match(r'^([^()]+\([^)]*\))\s*(.*)$', stripped)
+                if is_bullet_line and '(' in stripped else None
+            )
+            if paren_match:
+                key_part = paren_match.group(1)
+                val_part = paren_match.group(2).strip()
+                norm = _normalize(clean_label(key_part))
+                if norm in alias_map:
+                    current_field = alias_map[norm]
+                    result[current_field] = val_part  # 빈 문자열이면 다음 줄에서 채움
+                    continue
             if is_bullet_line:
                 current_field = None
             elif current_field:

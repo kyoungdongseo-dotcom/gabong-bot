@@ -46,3 +46,13 @@ apply_permissions.py
 auto_generate_news.py
 news_data.json
 setup_scheduler.sh
+
+# 백업 파일 패턴 (2026-05-18 추가)
+*.bak
+*.bak.*
+*.backup_*
+*.broken*
+*.before-fix
+*.fully-broken
+check_group.py
+check_topic.py

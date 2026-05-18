@@ -52,10 +52,12 @@ def _alias_hint(field: str) -> str:
     return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
 
 
-async def _check_required_fields(report: dict, user_id: int, context) -> bool:
-    """필수 필드 검증. missing 있으면 사용자 DM 안내 후 True 반환 (저장 중단).
+async def _check_required_fields(report: dict, user_id: int, context, origin: dict) -> bool:
+    """필수 필드 검증. missing 있으면 그룹 보고자 메시지에 reply 안내 후 True 반환 (저장 중단).
     missing 없으면 False (저장 진행).
-    Why: 양식 미완성 보고서 silent 저장 방지.
+    Why: 양식 미완성 보고서 silent 저장 방지 + mou/award 패턴 일관성.
+    이전엔 user_id 로 DM 발송했으나, 봇과 1:1 DM 없는 사용자는 Forbidden 으로 silent fail
+    → 그룹 reply 로 변경하여 모든 사용자 안내 보장 (2026-05-18 핫픽스).
     신양식 호환: 지역_지부(=tribe_resolver 매칭 성공), 활동명, 활동일시,
                  내부봉사자/외부봉사자(0 허용), 활동성과 (2026-05-18)."""
     missing = []
@@ -70,18 +72,18 @@ async def _check_required_fields(report: dict, user_id: int, context) -> bool:
     if not missing:
         return False
     from database import log_report_stage
+    from handlers.report_base import reply_to_origin
     log_report_stage('service', 'missing', 'fail',
                      user_id=user_id,
                      detail=f"missing: {','.join(missing)}")
     hints = '\n  - '.join(_alias_hint(f) for f in missing)
-    try:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"⚠️ 봉사보고서 필수 항목 누락:\n  - {hints}\n\n사진+양식 모두 필요합니다.\n"
-                 "ℹ️ 신양식: [지역명_지부명 봉사 활동보고] / 구양식: [지파 교회] 봉사보고서 (한 달 호환)"
-        )
-    except Exception as e:
-        print(f"⚠️ 필수 필드 누락 DM 안내 실패: user={user_id} err={e}")
+    msg = (
+        f"⚠️ 봉사보고서 필수 항목 누락:\n  - {hints}\n\n사진+양식 모두 필요합니다.\n"
+        "ℹ️ 신양식: [지역명_지부명 봉사 활동보고] / 구양식: [지파 교회] 봉사보고서 (한 달 호환)"
+    )
+    sent = await reply_to_origin(context.bot, origin, msg)
+    if not sent:
+        print(f"⚠️ 필수 필드 누락 reply 실패: user={user_id} origin={origin}")
     return True
 
 # my_keywords 빈도 제한 (메인 관리자 DM 도배 방지)
@@ -429,7 +431,7 @@ async def process_media_group(context, media_group_id: str):
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                              detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
             # 필수 필드 검증 (2026-05-14 추가, mou/award 패턴)
-            if await _check_required_fields(report, user_id, context):
+            if await _check_required_fields(report, user_id, context, origin):
                 log_report_stage('service', 'parsed', 'fail',
                                  user_id=user_id, detail='missing required fields')
                 cleanup_media_cache()
@@ -530,7 +532,7 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                                  detail=caption[:120])
                 log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                                  detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
-                if await _check_required_fields(report, user_id, context):
+                if await _check_required_fields(report, user_id, context, origin):
                     log_report_stage('service', 'parsed', 'fail',
                                      user_id=user_id, detail='missing required fields')
                     return
@@ -608,7 +610,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                              detail=text[:120])
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
                              detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
-            if await _check_required_fields(report, user_id, context):
+            if await _check_required_fields(report, user_id, context, origin):
                 log_report_stage('service', 'parsed', 'fail',
                                  user_id=user_id, detail='missing required fields')
                 return

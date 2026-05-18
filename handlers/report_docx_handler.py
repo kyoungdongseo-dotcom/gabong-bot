@@ -131,20 +131,70 @@ def generate_docx(report: dict, output_path: str, photo_paths: list = None) -> b
         add_table_row(table, '■ 활동명', report.get('활동명'))
         add_table_row(table, '■ 봉사분류', report.get('봉사분류'))
         add_table_row(table, '■ 활동일시', report.get('활동일시'))
-        add_table_row(table, '■ 수혜자', report.get('수혜자수'))
         add_table_row(table, '■ 활동장소', report.get('활동장소'))
+        add_table_row(table, '■ 수혜자 수', report.get('수혜자수'))
+        if report.get('수혜기관대상'):
+            add_table_row(table, '■ 수혜기관/대상', report.get('수혜기관대상'))
         add_table_row(table, '■ 내부봉사자', f"{report.get('내부봉사자', '0')}명")
         add_table_row(table, '■ 외부봉사자', f"{report.get('외부봉사자', '0')}명")
         add_table_row(table, '■ 총봉사자', f"{report.get('총봉사자', '0')}명")
+        if report.get('캠페인시민참여'):
+            add_table_row(table, '■ 캠페인 시민참여', report.get('캠페인시민참여'))
+        if report.get('쓰레기수거량'):
+            add_table_row(table, '■ 쓰레기 수거량', report.get('쓰레기수거량'))
 
         doc.add_paragraph()
 
-        add_section(doc, '1. 활동 내용', report.get('활동내용'))
-        add_section(doc, '2. 반응 및 특이사항', report.get('반응특이사항'))
-        add_section(doc, '3. 참여인사', report.get('참여인사'))
-        add_section(doc, '4. 홍보도구', report.get('홍보도구'))
-        add_section(doc, '5. 잘된 점', report.get('잘된점'))
-        add_section(doc, '6. 개선할 점', report.get('개선할점'))
+        # 자유 서술 섹션 — 값이 있는 항목만 출력 (신/구 양식 양방향 호환, 2026-05-18)
+        idx = 1
+        if report.get('기획취지배경'):
+            add_section(doc, f'{idx}. 기획 취지·배경(지역문제점)', report.get('기획취지배경'))
+            idx += 1
+        if report.get('활동내용'):
+            add_section(doc, f'{idx}. 활동 내용', report.get('활동내용'))
+            idx += 1
+        if report.get('활동성과'):
+            add_section(doc, f'{idx}. 활동 성과', report.get('활동성과'))
+            idx += 1
+        # 협력 인사/단체 (수치 + 소속) 통합 섹션
+        cooperation_parts = []
+        if report.get('협력인사수'):
+            cooperation_parts.append(f"인사 {report.get('협력인사수')}명")
+        if report.get('협력단체수'):
+            cooperation_parts.append(f"단체 {report.get('협력단체수')}곳")
+        if report.get('협력소속'):
+            cooperation_parts.append(f"소속: {report.get('협력소속')}")
+        if cooperation_parts:
+            add_section(doc, f'{idx}. 협력 인사/단체', ' | '.join(cooperation_parts))
+            idx += 1
+        # 현장 반응 (수혜자 / 시민 참여)
+        reactions = []
+        if report.get('수혜자반응'):
+            reactions.append(f"수혜자 반응: {report.get('수혜자반응')}")
+        if report.get('시민참여반응'):
+            reactions.append(f"시민 참여 반응: {report.get('시민참여반응')}")
+        if reactions:
+            add_section(doc, f'{idx}. 현장 반응', '\n'.join(reactions))
+            idx += 1
+        if report.get('기대효과'):
+            add_section(doc, f'{idx}. 기대효과(지역사회관점)', report.get('기대효과'))
+            idx += 1
+        # 구양식 잔존 필드 — 호환 모드에서만 출력
+        if report.get('반응특이사항'):
+            add_section(doc, f'{idx}. 반응 및 특이사항', report.get('반응특이사항'))
+            idx += 1
+        if report.get('참여인사'):
+            add_section(doc, f'{idx}. 참여인사', report.get('참여인사'))
+            idx += 1
+        if report.get('홍보도구'):
+            add_section(doc, f'{idx}. 홍보도구', report.get('홍보도구'))
+            idx += 1
+        if report.get('잘된점'):
+            add_section(doc, f'{idx}. 잘된 점', report.get('잘된점'))
+            idx += 1
+        if report.get('개선할점'):
+            add_section(doc, f'{idx}. 개선할 점', report.get('개선할점'))
+            idx += 1
 
         # 사진 처리: photo_paths 가 있으면 그대로, 없으면 URL 에서 다운로드
         if photo_paths is not None:

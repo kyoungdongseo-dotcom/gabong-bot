@@ -30,14 +30,19 @@ ALBUM_WAIT_SECONDS = 7
 # mou/award 토픽은 각자 전용 핸들러가 자기 토픽 화이트리스트로 처리
 VOLUNTEER_TOPIC_ID = (config.get('report_topics', {}) or {}).get('service', 2)
 
-# 봉사보고서 필수 필드 (mou/award 패턴 적용)
+# 봉사보고서 필수 필드 (신규 양식, 2026-05-18)
 # 양식 키는 report_parser.py 의 _REPORT_KEY_ALIASES 와 일치
-REQUIRED_FIELDS = {'지파명', '교회명', '활동일시'}
+# 0 허용 (빈값만 거부): 내부봉사자/외부봉사자
+# 지역_지부 는 별도 검증 (_match in 'exact'/'normalized')
+REQUIRED_FIELDS = {'활동명', '활동일시', '내부봉사자', '외부봉사자', '활동성과'}
 
 _VOLUNTEER_FIELD_ALIASES = {
-    '지파명': ['지파명', '지파', '지파이름'],
-    '교회명': ['교회명', '교회'],
+    '활동명': ['활동명', '행사명', '봉사명', '사업명'],
     '활동일시': ['활동일시', '봉사일시', '일시', '일자', '날짜'],
+    '내부봉사자': ['내부봉사자', '내부봉사자 수', '내부'],
+    '외부봉사자': ['외부봉사자', '외부봉사자 수', '외부'],
+    '활동성과': ['활동성과', '활동 성과', '성과'],
+    '지역_지부': ['지역_지부', '지역명_지부명 (신양식)', '지파 교회 (구양식)'],
 }
 
 
@@ -50,9 +55,18 @@ def _alias_hint(field: str) -> str:
 async def _check_required_fields(report: dict, user_id: int, context) -> bool:
     """필수 필드 검증. missing 있으면 사용자 DM 안내 후 True 반환 (저장 중단).
     missing 없으면 False (저장 진행).
-    Why: mou/award 패턴 일관성. 양식 미완성 보고서 silent 저장 방지.
-    stage='missing' 기록으로 일일 서무 요약 추적 가능 (2026-05-14)."""
-    missing = [f for f in REQUIRED_FIELDS if not report.get(f)]
+    Why: 양식 미완성 보고서 silent 저장 방지.
+    신양식 호환: 지역_지부(=tribe_resolver 매칭 성공), 활동명, 활동일시,
+                 내부봉사자/외부봉사자(0 허용), 활동성과 (2026-05-18)."""
+    missing = []
+    # 1) 지역_지부 — tribe_resolver 매칭 성공 여부 (구/신양식 양쪽 호환)
+    if report.get('_match') not in ('exact', 'normalized'):
+        missing.append('지역_지부')
+    # 2) 일반 필수 필드 — 빈값(미입력) 거부, '0' 은 허용
+    for f in REQUIRED_FIELDS:
+        v = report.get(f)
+        if v is None or v == '':
+            missing.append(f)
     if not missing:
         return False
     from database import log_report_stage
@@ -63,7 +77,8 @@ async def _check_required_fields(report: dict, user_id: int, context) -> bool:
     try:
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"⚠️ 봉사보고서 필수 항목 누락:\n  - {hints}\n\n사진+양식 모두 필요합니다."
+            text=f"⚠️ 봉사보고서 필수 항목 누락:\n  - {hints}\n\n사진+양식 모두 필요합니다.\n"
+                 "ℹ️ 신양식: [지역명_지부명 봉사 활동보고] / 구양식: [지파 교회] 봉사보고서 (한 달 호환)"
         )
     except Exception as e:
         print(f"⚠️ 필수 필드 누락 DM 안내 실패: user={user_id} err={e}")

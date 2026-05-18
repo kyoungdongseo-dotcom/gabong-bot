@@ -241,12 +241,18 @@ def build_submission_hash(report_type: str, data: dict) -> str:
             data.get('활동명', ''),
             (data.get('활동일시', '') or '')[:10],
         ]
+    elif report_type == 'press':
+        parts = [
+            data.get('지부', '') or data.get('교회명', ''),
+            data.get('보도제목', ''), data.get('언론사명', ''),
+            (data.get('보도일자', '') or '')[:10],
+        ]
     else:
         parts = []
     return '|'.join(normalize_for_hash(p) for p in parts)
 
 
-_REPORT_LABEL = {'award': '수상', 'mou': 'MOU', 'service': '봉사'}
+_REPORT_LABEL = {'award': '수상', 'mou': 'MOU', 'service': '봉사', 'press': '언론보도'}
 
 
 async def check_duplicate_and_warn(context, *, report_type: str, data: dict,

@@ -52,6 +52,17 @@ def _alias_hint(field: str) -> str:
     return f"{field} (다음 중 하나로 입력 가능: {', '.join(aliases)})"
 
 
+def _locale_pair(report: dict) -> tuple[str, str]:
+    """봉사보고서 표기 페어 — 양식별 분기.
+    신양식 (_format=new + 연합회/지부 정규화 성공): ('서울경기남부연합회', '과천지부')
+    구양식 / 매칭 실패 fallback: ('요한지파', '과천교회')
+    Why: DOCX 헤더 / 파일명 / DM 요약 / report_log detail 정합 (2026-05-18).
+    같은 데이터 5곳 흘러가는 표기 통일."""
+    if report.get('_format') == 'new' and report.get('연합회') and report.get('지부'):
+        return f"{report['연합회']}연합회", report['지부']
+    return report.get('지파명', ''), report.get('교회명', '')
+
+
 async def _check_required_fields(report: dict, user_id: int, context, origin: dict) -> bool:
     """필수 필드 검증. missing 있으면 그룹 보고자 메시지에 reply 안내 후 True 반환 (저장 중단).
     missing 없으면 False (저장 진행).
@@ -260,10 +271,11 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
 
         # ── 4. 서무 DM 요약 ────────────────────────────────────────────
         photo_text = f"📸 사진 {len(photos)}장 첨부" if photos else "📸 사진 없음"
+        loc_a, loc_b = _locale_pair(report)
         if sheet_ok:
             summary_dm = (
                 f"✅ 봉사보고서 처리 완료\n"
-                f"📌 {report.get('지파명')} {report.get('교회명')}\n"
+                f"📌 {loc_a} {loc_b}\n"
                 f"📋 {report.get('활동명')}\n"
                 f"👥 총 봉사자: {report.get('총봉사자')}명\n"
                 f"{photo_text}\n"
@@ -271,7 +283,7 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
             )
         else:
             summary_dm = (
-                f"⚠️ {report.get('지파명')} {report.get('교회명')} 봉사보고서 - 시트 저장 실패!\n"
+                f"⚠️ {loc_a} {loc_b} 봉사보고서 - 시트 저장 실패!\n"
                 f"Word 파일은 정상이지만 스프레드시트 자동 저장 실패\n"
                 f"수동으로 봉사리포트 시트에 추가 부탁드립니다\n\n"
                 f"📋 {report.get('활동명')}\n"
@@ -285,22 +297,16 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
 
         # ── 5. Word 파일 전송 ──────────────────────────────────────────
         if output_path and _os.path.exists(output_path):
-            # 신양식: "{연합회}연합회_{지부}_..." / 구양식: "{지파명}_{교회명}_..." (2026-05-18)
-            if report.get('_format') == 'new' and report.get('연합회') and report.get('지부'):
-                locale_a = f"{report.get('연합회')}연합회"
-                locale_b = report.get('지부', '')
-            else:
-                locale_a = report.get('지파명', '')
-                locale_b = report.get('교회명', '')
+            # 양식별 표기는 _locale_pair() 헬퍼로 통합 (DM 요약과 동일 분기)
             activity = report.get('활동명', '')
             date = (report.get('활동일시', '') or '')[:10]
-            filename = f"{locale_a}_{locale_b}_{activity}_{date}.docx".replace(' ', '_').replace('/', '-')
+            filename = f"{loc_a}_{loc_b}_{activity}_{date}.docx".replace(' ', '_').replace('/', '-')
             try:
                 with open(output_path, 'rb') as f:
                     await base_send(
                         context.bot, DOCX_RECIPIENT_ID,
                         document=f, filename=filename,
-                        caption=f"📄 새 봉사보고서 Word 파일\n📌 {locale_a} {locale_b}\n📋 {activity}\n📅 {date}"
+                        caption=f"📄 새 봉사보고서 Word 파일\n📌 {loc_a} {loc_b}\n📋 {activity}\n📅 {date}"
                     )
             finally:
                 try: _os.remove(output_path)
@@ -428,8 +434,9 @@ async def process_media_group(context, media_group_id: str):
                              topic_id=origin.get('message_thread_id'),
                              message_id=origin.get('message_id'),
                              detail=caption[:120])
+            _la, _lb = _locale_pair(report)
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                             detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
+                             detail=f"[{report.get('_match','?')}] {_la} | {_lb} → {report.get('지부','-')} | {report.get('활동명','')}")
             # 필수 필드 검증 (2026-05-14 추가, mou/award 패턴)
             if await _check_required_fields(report, user_id, context, origin):
                 log_report_stage('service', 'parsed', 'fail',
@@ -530,8 +537,9 @@ async def handle_photo_messages(update: Update, context: ContextTypes.DEFAULT_TY
                                  topic_id=thread_id,
                                  message_id=update.message.message_id,
                                  detail=caption[:120])
+                _la, _lb = _locale_pair(report)
                 log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                                 detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
+                                 detail=f"[{report.get('_match','?')}] {_la} | {_lb} → {report.get('지부','-')} | {report.get('활동명','')}")
                 if await _check_required_fields(report, user_id, context, origin):
                     log_report_stage('service', 'parsed', 'fail',
                                      user_id=user_id, detail='missing required fields')
@@ -608,8 +616,9 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
                              topic_id=thread_id,
                              message_id=update.message.message_id,
                              detail=text[:120])
+            _la, _lb = _locale_pair(report)
             log_report_stage('service', 'parsed', 'ok', user_id=user_id,
-                             detail=f"[{report.get('_match','?')}] {report.get('지파명','')} | {report.get('교회명','')} → {report.get('지부','-')} | {report.get('활동명','')}")
+                             detail=f"[{report.get('_match','?')}] {_la} | {_lb} → {report.get('지부','-')} | {report.get('활동명','')}")
             if await _check_required_fields(report, user_id, context, origin):
                 log_report_stage('service', 'parsed', 'fail',
                                  user_id=user_id, detail='missing required fields')

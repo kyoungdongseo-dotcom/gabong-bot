@@ -8,6 +8,14 @@ DAY_MAP = {"월": "mon", "화": "tue", "수": "wed", "목": "thu",
            "금": "fri", "토": "sat", "일": "sun"}
 
 
+def _extract_message_after_time(full_text: str, time_str: str) -> str:
+    """time_str 이후 텍스트 추출. 공백 유무 무관. 없으면 빈 문자열."""
+    idx = full_text.find(time_str)
+    if idx < 0:
+        return ""
+    return full_text[idx + len(time_str):].strip()
+
+
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
@@ -18,7 +26,14 @@ async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("사용법: /remind_daily HH:MM [내용]")
         return
     time_str = context.args[0]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /remind_daily HH:MM [내용]\n"
+            "예: /remind_daily 10:00 오전 회의 알림"
+        )
+        return
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
@@ -45,7 +60,14 @@ async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     days_str = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /remind_weekly 요일 HH:MM [내용]\n"
+            "예: /remind_weekly 월,수,금 10:00 주간 회의"
+        )
+        return
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
@@ -73,7 +95,14 @@ async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     days_str = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /remind_biweekly 요일 HH:MM [내용]\n"
+            "예: /remind_biweekly 월 14:00 격주 점검"
+        )
+        return
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
@@ -101,7 +130,14 @@ async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     day = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /remind_monthly 일자 HH:MM [내용]\n"
+            "예: /remind_monthly 5 10:00 월간 보고"
+        )
+        return
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
@@ -128,7 +164,14 @@ async def broadcast_remind_daily(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("사용법: /broadcast_remind_daily HH:MM [내용]")
         return
     time_str = context.args[0]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /broadcast_remind_daily HH:MM [내용]\n"
+            "예: /broadcast_remind_daily 09:00 일일 공지"
+        )
+        return
     hour, minute = map(int, time_str.split(":"))
 
     reminder_id = add_reminder(0, None, "broadcast_daily", text, time_str)
@@ -152,7 +195,14 @@ async def broadcast_remind_weekly(update: Update, context: ContextTypes.DEFAULT_
         return
     days_str = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /broadcast_remind_weekly 요일 HH:MM [내용]\n"
+            "예: /broadcast_remind_weekly 월 09:00 주간 공지"
+        )
+        return
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
     hour, minute = map(int, time_str.split(":"))
 
@@ -177,7 +227,14 @@ async def broadcast_remind_biweekly(update: Update, context: ContextTypes.DEFAUL
         return
     days_str = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /broadcast_remind_biweekly 요일 HH:MM [내용]\n"
+            "예: /broadcast_remind_biweekly 월 09:00 격주 공지"
+        )
+        return
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
     hour, minute = map(int, time_str.split(":"))
 
@@ -202,7 +259,14 @@ async def broadcast_remind_monthly(update: Update, context: ContextTypes.DEFAULT
         return
     day = context.args[0]
     time_str = context.args[1]
-    text = update.message.text.split(time_str + " ", 1)[1]
+    text = _extract_message_after_time(update.message.text, time_str)
+    if not text:
+        await update.message.reply_text(
+            "❌ 메시지 내용을 입력해주세요.\n"
+            "사용법: /broadcast_remind_monthly 일자 HH:MM [내용]\n"
+            "예: /broadcast_remind_monthly 1 09:00 월간 공지"
+        )
+        return
     hour, minute = map(int, time_str.split(":"))
 
     reminder_id = add_reminder(0, None, "broadcast_monthly", text, time_str, day_of_month=int(day))

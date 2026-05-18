@@ -56,3 +56,5 @@ setup_scheduler.sh
 *.fully-broken
 check_group.py
 check_topic.py
+gabong-bot-analysis.tar.gz
+*.tar.gz

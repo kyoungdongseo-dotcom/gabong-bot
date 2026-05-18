@@ -73,6 +73,9 @@ def parse_report(text: str) -> dict | None:
         # 정규화 결과 (dry-run): 'exact' | 'normalized' | 'wrong_pair' | 'unknown'
         '_match': 'unknown',
         '_match_error': '',
+        # 입력 양식 판별: 'new' (지역_지부 언더스코어) | 'old' (지파 교회 공백)
+        # docx 헤더 / 파일명 명명 규칙 분기 (2026-05-18)
+        '_format': 'old',
     }
 
     # 1차 추출: 브래킷 형식 우선, 실패 시 첫 줄 토큰
@@ -83,6 +86,7 @@ def parse_report(text: str) -> dict | None:
     if new_match:
         raw_first = new_match.group(1).strip()
         raw_second = new_match.group(2).strip()
+        result['_format'] = 'new'
     else:
         title_match = re.search(r'\[([^\s\]]+)\s+([^\s\]]+)', text)
         if title_match:

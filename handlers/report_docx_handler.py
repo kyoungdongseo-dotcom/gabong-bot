@@ -110,7 +110,13 @@ def generate_docx(report: dict, output_path: str, photo_paths: list = None) -> b
 
         title = doc.add_paragraph()
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = title.add_run(f"{report.get('지파명', '')} {report.get('교회명', '')} 봉사 활동보고")
+        # 신양식: "{연합회}연합회 {지부} 봉사 활동보고"
+        # 구양식: "{지파명} {교회명} 봉사보고서" (연합회/지부 정규화 실패 시 fallback)
+        if report.get('_format') == 'new' and report.get('연합회') and report.get('지부'):
+            title_text = f"{report.get('연합회')}연합회 {report.get('지부')} 봉사 활동보고"
+        else:
+            title_text = f"{report.get('지파명', '')} {report.get('교회명', '')} 봉사보고서"
+        run = title.add_run(title_text)
         run.bold = True
         run.font.size = Pt(16)
         run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)

@@ -283,17 +283,22 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
 
         # ── 5. Word 파일 전송 ──────────────────────────────────────────
         if output_path and _os.path.exists(output_path):
-            jipa = report.get('지파명', '')
-            church = report.get('교회명', '')
+            # 신양식: "{연합회}연합회_{지부}_..." / 구양식: "{지파명}_{교회명}_..." (2026-05-18)
+            if report.get('_format') == 'new' and report.get('연합회') and report.get('지부'):
+                locale_a = f"{report.get('연합회')}연합회"
+                locale_b = report.get('지부', '')
+            else:
+                locale_a = report.get('지파명', '')
+                locale_b = report.get('교회명', '')
             activity = report.get('활동명', '')
             date = (report.get('활동일시', '') or '')[:10]
-            filename = f"{jipa}_{church}_{activity}_{date}.docx".replace(' ', '_').replace('/', '-')
+            filename = f"{locale_a}_{locale_b}_{activity}_{date}.docx".replace(' ', '_').replace('/', '-')
             try:
                 with open(output_path, 'rb') as f:
                     await base_send(
                         context.bot, DOCX_RECIPIENT_ID,
                         document=f, filename=filename,
-                        caption=f"📄 새 봉사보고서 Word 파일\n📌 {jipa} {church}\n📋 {activity}\n📅 {date}"
+                        caption=f"📄 새 봉사보고서 Word 파일\n📌 {locale_a} {locale_b}\n📋 {activity}\n📅 {date}"
                     )
             finally:
                 try: _os.remove(output_path)

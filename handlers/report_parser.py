@@ -52,6 +52,11 @@ def parse_report(text: str) -> dict | None:
     if not re.search(r'(활동|봉사)\s*보고', text):
         return None
 
+    # 보고서 양식 마커 (■) 필수 — 일반 채팅에 "활동보고" 단어만 있을 때 오작동 차단.
+    # Why: "활동보고 잠시 멈춰주세요" 류 일반 멘트가 누락 안내 발송 트리거 (2026-05-19)
+    if '■' not in text:
+        return None
+
     result = {
         '등록일시': datetime.now(KST).strftime('%Y-%m-%d %H:%M'),
         '지파명': '', '교회명': '', '연합회': '', '지부': '',
@@ -125,17 +130,18 @@ def parse_report(text: str) -> dict | None:
         if val:
             result[field] = val
 
-    # 수혜자 숫자만 추출
-    if result['수혜자수']:
-        m = re.search(r'(\d+)', result['수혜자수'])
-        result['수혜자수'] = m.group(1) if m else result['수혜자수']
-
-    # 봉사자 수 숫자 추출 — 빈값은 빈값으로 유지 (REQUIRED 체크에서 누락 감지)
-    # Why: 0은 허용, 빈값(필드 자체 누락)은 거부 (2026-05-18 신양식)
-    for field in ['내부봉사자', '외부봉사자']:
-        raw = result[field]
+    # 수치형 필드 — 빈값은 '0' 으로 자동 채움 (사용자 의도: 미입력 = 0명/0건)
+    # Why: "■ 외부봉사자 수(명): " (빈값) 을 누락으로 처리하던 버그 수정 (2026-05-19)
+    #      신양식 + 구양식 모두 동일 정책. 7개 수치형 필드 일괄 처리.
+    NUMERIC_FIELDS = (
+        '내부봉사자', '외부봉사자', '수혜자수',
+        '캠페인시민참여', '쓰레기수거량', '협력인사수', '협력단체수',
+    )
+    for field in NUMERIC_FIELDS:
+        raw = (result.get(field) or '').strip()
         if not raw:
-            continue  # 필드 미입력 → 빈값 유지
+            result[field] = '0'
+            continue
         m = re.search(r'(\d+)', raw)
         result[field] = m.group(1) if m else '0'
 

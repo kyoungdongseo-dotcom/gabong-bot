@@ -76,7 +76,12 @@ async def _check_required_fields(report: dict, user_id: int, context, origin: di
     if report.get('_match') not in ('exact', 'normalized'):
         missing.append('지역_지부')
     # 2) 일반 필수 필드 — 빈값(미입력) 거부, '0' 은 허용
+    # 구양식 ('_format' != 'new') 은 활동성과 면제 — "잘된 점/개선할 점" 자유 서술이 대체
+    # (메모리 #22 구양식 호환 정책, 2026-05-19)
+    fmt = report.get('_format', 'old')
     for f in REQUIRED_FIELDS:
+        if fmt != 'new' and f == '활동성과':
+            continue
         v = report.get(f)
         if v is None or v == '':
             missing.append(f)

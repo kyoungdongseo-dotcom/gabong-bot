@@ -16,6 +16,25 @@ def _extract_message_after_time(full_text: str, time_str: str) -> str:
     return full_text[idx + len(time_str):].strip()
 
 
+def _parse_time_str(time_str: str) -> tuple[int, int] | None:
+    """HH:MM 형식 (24시간제) 파싱. 실패 시 None.
+
+    Why: /remind_* 8곳에서 map(int, ...split(":")) 직접 호출이 잘못된 입력
+    (예: "abc", "10시30분", "25:00") 시 ValueError silent crash → 사용자 무응답.
+    (2026-05-19, audit critical 2)
+    """
+    try:
+        parts = (time_str or '').strip().split(":")
+        if len(parts) != 2:
+            return None
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            return None
+        return h, m
+    except (ValueError, AttributeError):
+        return None
+
+
 async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
@@ -37,7 +56,13 @@ async def remind_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(chat_id, topic_id, "daily", text, time_str, user_id=user_id)
     get_scheduler().add_job(
@@ -72,7 +97,13 @@ async def remind_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(chat_id, topic_id, "weekly", text, time_str, days_str, user_id=user_id)
     get_scheduler().add_job(
@@ -107,7 +138,13 @@ async def remind_biweekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(chat_id, topic_id, "biweekly", text, time_str, days_str, user_id=user_id)
     get_scheduler().add_job(
@@ -141,7 +178,13 @@ async def remind_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     topic_id = update.message.message_thread_id
     user_id = update.effective_user.id
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(chat_id, topic_id, "monthly", text, time_str,
                                day_of_month=int(day), user_id=user_id)
@@ -172,7 +215,13 @@ async def broadcast_remind_daily(update: Update, context: ContextTypes.DEFAULT_T
             "예: /broadcast_remind_daily 09:00 일일 공지"
         )
         return
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(0, None, "broadcast_daily", text, time_str)
     get_scheduler().add_job(
@@ -204,7 +253,13 @@ async def broadcast_remind_weekly(update: Update, context: ContextTypes.DEFAULT_
         )
         return
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(0, None, "broadcast_weekly", text, time_str, days_str)
     get_scheduler().add_job(
@@ -236,7 +291,13 @@ async def broadcast_remind_biweekly(update: Update, context: ContextTypes.DEFAUL
         )
         return
     days_en = ",".join(DAY_MAP[d] for d in days_str.split(","))
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(0, None, "broadcast_biweekly", text, time_str, days_str)
     get_scheduler().add_job(
@@ -267,7 +328,13 @@ async def broadcast_remind_monthly(update: Update, context: ContextTypes.DEFAULT
             "예: /broadcast_remind_monthly 1 09:00 월간 공지"
         )
         return
-    hour, minute = map(int, time_str.split(":"))
+    parsed = _parse_time_str(time_str)
+    if not parsed:
+        await update.message.reply_text(
+            "❌ 시간 형식 오류 (HH:MM 24시간제). 예: 10:00, 14:30"
+        )
+        return
+    hour, minute = parsed
 
     reminder_id = add_reminder(0, None, "broadcast_monthly", text, time_str, day_of_month=int(day))
     get_scheduler().add_job(

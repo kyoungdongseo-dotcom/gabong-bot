@@ -1,4 +1,5 @@
 import logging
+import re
 import traceback
 from datetime import datetime, timedelta
 import pytz
@@ -9,6 +10,23 @@ import config
 logger = logging.getLogger(__name__)
 
 KST = pytz.timezone('Asia/Seoul')
+
+
+def _extract_int(val) -> int:
+    """문자열에서 첫 정수 추출. 통계 silent 왜곡 차단 (2026-05-19, audit critical 3).
+
+    예: "5명" → 5, "5,000" → 5000, "10" → 10, "" → 0, None → 0, "abc" → 0.
+    Why: 기존 r[X].isdigit() 만 인정 → 단위 포함 셀("5명") / 천단위 콤마("5,000") 통계 누락.
+    """
+    if val is None:
+        return 0
+    m = re.search(r'\d[\d,]*', str(val))
+    if not m:
+        return 0
+    try:
+        return int(m.group(0).replace(',', ''))
+    except ValueError:
+        return 0
 
 def get_sheet_service():
     creds = Credentials.from_service_account_file('serviceAccountKey.json', scopes=config.get('google_scopes'))
@@ -85,10 +103,11 @@ def analyze_monthly_stats():
             week_rows = week['rows']
 
             total_count = len(week_rows)
-            total_inner = sum(int(r[8]) for r in week_rows if len(r) > 8 and r[8].isdigit())
-            total_outer = sum(int(r[9]) for r in week_rows if len(r) > 9 and r[9].isdigit())
+            # _extract_int — "5명"/"5,000" 등 단위/콤마 포함 셀 흡수 (2026-05-19 audit critical 3)
+            total_inner = sum(_extract_int(r[8]) for r in week_rows if len(r) > 8)
+            total_outer = sum(_extract_int(r[9]) for r in week_rows if len(r) > 9)
             total_volunteers = total_inner + total_outer
-            total_beneficiary = sum(int(r[7]) for r in week_rows if len(r) > 7 and r[7].isdigit())
+            total_beneficiary = sum(_extract_int(r[7]) for r in week_rows if len(r) > 7)
 
             category_count = {}
             for r in week_rows:

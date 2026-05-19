@@ -46,8 +46,13 @@ ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 
 def _has_mou_keywords(text: str) -> bool:
-    """MOU 또는 협약 + 보고 키워드 감지"""
+    """MOU 또는 협약 + 보고 + ■ 양식 마커 모두 있어야 trigger.
+
+    Why: "협약 보고 받았어" 류 일반 채팅 false positive 차단 (2026-05-19)
+    """
     if '보고' not in text:
+        return False
+    if '■' not in text:
         return False
     return 'MOU' in text.upper() or '협약' in text
 

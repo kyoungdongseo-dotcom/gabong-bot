@@ -86,6 +86,9 @@ def parse_award_caption(caption: str) -> dict | None:
         return None
     if '수상' not in caption or '보고' not in caption:
         return None
+    # 양식 마커 필수 — "수상 보고 받았어" 류 일반 채팅 false positive 차단 (2026-05-19)
+    if '■' not in caption:
+        return None
     lines = [l.strip() for l in caption.strip().splitlines() if l.strip()]
     if not lines:
         return None
@@ -777,8 +780,8 @@ async def handle_award_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if is_partial_match('award', caption):
             await maybe_send_format_help(context.bot, origin, user_id, 'award')
 
-    # 케이스 A/B: 단일 사진+캡션 → 즉시 처리
-    if caption and '수상' in caption and '보고' in caption:
+    # 케이스 A/B: 단일 사진+캡션 → 즉시 처리 (■ 양식 마커 필수, 2026-05-19)
+    if caption and '수상' in caption and '보고' in caption and '■' in caption:
         log_report_stage('award', 'received', 'ok', user_id=user_id,
                          chat_id=origin['chat_id'],
                          topic_id=origin['message_thread_id'],
@@ -842,7 +845,8 @@ async def handle_award_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.message_thread_id != AWARD_TOPIC_ID:
         return
     text = update.message.text
-    if '수상' not in text or '보고' not in text:
+    # ■ 양식 마커 필수 — "수상 보고 받았어" 류 일반 채팅 false positive 차단 (2026-05-19)
+    if '수상' not in text or '보고' not in text or '■' not in text:
         # 부분 일치면 형식 안내 (1일 1회)
         from handlers.help_handler import is_partial_match, maybe_send_format_help
         from handlers.report_base import make_origin as _mo

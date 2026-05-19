@@ -49,8 +49,13 @@ ADMIN_USER_ID = config.get('my_user_id', 97057565)
 
 
 def _has_press_keywords(text: str) -> bool:
-    """언론보도 + 보고 키워드 감지"""
+    """언론보도 + 보고 + ■ 양식 마커 모두 있어야 trigger.
+
+    Why: "언론보도 보고 받았어" 류 일반 채팅 false positive 차단 (2026-05-19)
+    """
     if '보고' not in text:
+        return False
+    if '■' not in text:
         return False
     return '언론보도' in text
 

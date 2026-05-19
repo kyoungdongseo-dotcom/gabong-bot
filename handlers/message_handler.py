@@ -301,6 +301,7 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
             activity = report.get('활동명', '')
             date = (report.get('활동일시', '') or '')[:10]
             filename = f"{loc_a}_{loc_b}_{activity}_{date}.docx".replace(' ', '_').replace('/', '-')
+            drive_task_started = False
             try:
                 with open(output_path, 'rb') as f:
                     await base_send(
@@ -308,9 +309,55 @@ async def finalize_report(context, report: dict, photos: list, source: str = "",
                         document=f, filename=filename,
                         caption=f"📄 새 봉사보고서 Word 파일\n📌 {loc_a} {loc_b}\n📋 {activity}\n📅 {date}"
                     )
+                # ── 5-1. Drive 백그라운드 업로드 (옵션 B 순수 비동기) ──
+                # drive_enabled=false (기본값) 이면 즉시 skip → 기존 흐름 100% 보존
+                # true 일 때만 task 생성: union 매핑 성공 시 task 가 output_path cleanup 책임
+                if config.get('drive_enabled', False):
+                    _union = (report.get('연합회') or '').strip()
+                    if not _union:
+                        try:
+                            from utils.tribe_resolver import resolve as _resolve
+                            _e = _resolve(report.get('교회명') or report.get('지부') or '')
+                            _union = _e['union'] if _e else ''
+                        except Exception as _re:
+                            print(f"⚠️ Drive union resolve 예외: {_re}", flush=True)
+                    if _union:
+                        try:
+                            from utils.drive_service import (
+                                upload_docx_background as _drive_upload,
+                                build_filename as _drive_fname,
+                            )
+                            _branch = report.get('지부') or report.get('교회명', '')
+                            _dname = _drive_fname(_union, _branch, activity, date)
+                            _bot_ref = context.bot
+                            async def _drive_admin_dm(text, _b=_bot_ref):
+                                try:
+                                    await base_notify(_b, text)
+                                except Exception as _ne:
+                                    print(f"⚠️ Drive admin DM 실패: {_ne}", flush=True)
+                            asyncio.create_task(_drive_upload(
+                                output_path, _dname, _union, 'volunteer',
+                                cleanup=True, admin_notify=_drive_admin_dm,
+                                user_id=user_id,
+                            ))
+                            drive_task_started = True
+                            print(f"📤 Drive 업로드 task 생성: {_dname} (union={_union})", flush=True)
+                        except Exception as _de:
+                            print(f"⚠️ Drive task 생성 실패: {_de}", flush=True)
+                    else:
+                        print(
+                            f"⚠️ Drive skip: union 매핑 실패 — "
+                            f"지파명={report.get('지파명')} 교회명={report.get('교회명')}",
+                            flush=True,
+                        )
             finally:
-                try: _os.remove(output_path)
-                except Exception: pass
+                # Drive task 시작 시: cleanup 책임을 task 에 위임 (output_path 보존)
+                # 그 외 (drive_enabled=false 또는 union 매핑 실패): 기존대로 즉시 삭제
+                if not drive_task_started:
+                    try: _os.remove(output_path)
+                    except Exception: pass
+                else:
+                    output_path = None  # 예외 핸들러 이중 삭제 방지
 
         try:
             record_submission('service', sub_hash, summary_dm[:200], user_id=user_id)

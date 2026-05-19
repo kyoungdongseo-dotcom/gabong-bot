@@ -7,6 +7,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     msg = """안녕하세요! GAbong Bot입니다 🤖
 
+📱 빠른 접근: /admin (관리자 대시보드)
+
 ━━━━━━━━━━━━━━━━━
 📋 누구나 사용 가능
 ━━━━━━━━━━━━━━━━━
